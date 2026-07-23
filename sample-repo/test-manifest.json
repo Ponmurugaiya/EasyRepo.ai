@@ -1,0 +1,1361 @@
+{
+  "entities": [
+    {
+      "id": "py.models.base",
+      "type": "module",
+      "name": "base.py",
+      "file_path": "python/models/base.py",
+      "start_line": 1,
+      "end_line": 34,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.base.BaseModel",
+      "type": "class",
+      "name": "BaseModel",
+      "file_path": "python/models/base.py",
+      "start_line": 8,
+      "end_line": 33,
+      "parent_id": "py.models.base",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.base.BaseModel.__init__",
+      "type": "method",
+      "name": "__init__",
+      "file_path": "python/models/base.py",
+      "start_line": 11,
+      "end_line": 14,
+      "parent_id": "py.models.base.BaseModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.base.BaseModel.to_dict",
+      "type": "method",
+      "name": "to_dict",
+      "file_path": "python/models/base.py",
+      "start_line": 16,
+      "end_line": 21,
+      "parent_id": "py.models.base.BaseModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.base.BaseModel.get_metadata",
+      "type": "method",
+      "name": "get_metadata",
+      "file_path": "python/models/base.py",
+      "start_line": 23,
+      "end_line": 28,
+      "parent_id": "py.models.base.BaseModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.base.BaseModel.validate",
+      "type": "method",
+      "name": "validate",
+      "file_path": "python/models/base.py",
+      "start_line": 30,
+      "end_line": 33,
+      "parent_id": "py.models.base.BaseModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user",
+      "type": "module",
+      "name": "user.py",
+      "file_path": "python/models/user.py",
+      "start_line": 1,
+      "end_line": 34,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user.UserModel",
+      "type": "class",
+      "name": "UserModel",
+      "file_path": "python/models/user.py",
+      "start_line": 7,
+      "end_line": 33,
+      "parent_id": "py.models.user",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user.UserModel.__init__",
+      "type": "method",
+      "name": "__init__",
+      "file_path": "python/models/user.py",
+      "start_line": 10,
+      "end_line": 14,
+      "parent_id": "py.models.user.UserModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user.UserModel.to_dict",
+      "type": "method",
+      "name": "to_dict",
+      "file_path": "python/models/user.py",
+      "start_line": 16,
+      "end_line": 23,
+      "parent_id": "py.models.user.UserModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user.UserModel.validate",
+      "type": "method",
+      "name": "validate",
+      "file_path": "python/models/user.py",
+      "start_line": 25,
+      "end_line": 29,
+      "parent_id": "py.models.user.UserModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.user.UserModel.format_user_details",
+      "type": "method",
+      "name": "format_user_details",
+      "file_path": "python/models/user.py",
+      "start_line": 31,
+      "end_line": 33,
+      "parent_id": "py.models.user.UserModel",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin",
+      "type": "module",
+      "name": "admin.py",
+      "file_path": "python/models/admin.py",
+      "start_line": 1,
+      "end_line": 29,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin.AdminUser",
+      "type": "class",
+      "name": "AdminUser",
+      "file_path": "python/models/admin.py",
+      "start_line": 7,
+      "end_line": 28,
+      "parent_id": "py.models.admin",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin.AdminUser.__init__",
+      "type": "method",
+      "name": "__init__",
+      "file_path": "python/models/admin.py",
+      "start_line": 10,
+      "end_line": 13,
+      "parent_id": "py.models.admin.AdminUser",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin.AdminUser.to_dict",
+      "type": "method",
+      "name": "to_dict",
+      "file_path": "python/models/admin.py",
+      "start_line": 15,
+      "end_line": 19,
+      "parent_id": "py.models.admin.AdminUser",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin.AdminUser.has_permission",
+      "type": "method",
+      "name": "has_permission",
+      "file_path": "python/models/admin.py",
+      "start_line": 21,
+      "end_line": 23,
+      "parent_id": "py.models.admin.AdminUser",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.models.admin.AdminUser.validate",
+      "type": "method",
+      "name": "validate",
+      "file_path": "python/models/admin.py",
+      "start_line": 25,
+      "end_line": 28,
+      "parent_id": "py.models.admin.AdminUser",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.interfaces.repository",
+      "type": "module",
+      "name": "repository.py",
+      "file_path": "python/interfaces/repository.py",
+      "start_line": 1,
+      "end_line": 24,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.interfaces.repository.Repository",
+      "type": "interface",
+      "name": "Repository",
+      "file_path": "python/interfaces/repository.py",
+      "start_line": 7,
+      "end_line": 23,
+      "parent_id": "py.interfaces.repository",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.interfaces.repository.Repository.save",
+      "type": "method",
+      "name": "save",
+      "file_path": "python/interfaces/repository.py",
+      "start_line": 10,
+      "end_line": 13,
+      "parent_id": "py.interfaces.repository.Repository",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.interfaces.repository.Repository.find_by_id",
+      "type": "method",
+      "name": "find_by_id",
+      "file_path": "python/interfaces/repository.py",
+      "start_line": 15,
+      "end_line": 18,
+      "parent_id": "py.interfaces.repository.Repository",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.interfaces.repository.Repository.delete",
+      "type": "method",
+      "name": "delete",
+      "file_path": "python/interfaces/repository.py",
+      "start_line": 20,
+      "end_line": 23,
+      "parent_id": "py.interfaces.repository.Repository",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service",
+      "type": "module",
+      "name": "auth_service.py",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 1,
+      "end_line": 44,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService",
+      "type": "class",
+      "name": "AuthService",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 8,
+      "end_line": 43,
+      "parent_id": "py.services.auth_service",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.__init__",
+      "type": "method",
+      "name": "__init__",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 11,
+      "end_line": 13,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.save",
+      "type": "method",
+      "name": "save",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 15,
+      "end_line": 18,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.find_by_id",
+      "type": "method",
+      "name": "find_by_id",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 20,
+      "end_line": 22,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.delete",
+      "type": "method",
+      "name": "delete",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 24,
+      "end_line": 26,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.validate",
+      "type": "method",
+      "name": "validate",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 28,
+      "end_line": 33,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.auth_service.AuthService.authenticate_user",
+      "type": "method",
+      "name": "authenticate_user",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 35,
+      "end_line": 43,
+      "parent_id": "py.services.auth_service.AuthService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.user_service",
+      "type": "module",
+      "name": "user_service.py",
+      "file_path": "python/services/user_service.py",
+      "start_line": 1,
+      "end_line": 31,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.user_service.UserService",
+      "type": "class",
+      "name": "UserService",
+      "file_path": "python/services/user_service.py",
+      "start_line": 7,
+      "end_line": 30,
+      "parent_id": "py.services.user_service",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.user_service.UserService.__init__",
+      "type": "method",
+      "name": "__init__",
+      "file_path": "python/services/user_service.py",
+      "start_line": 10,
+      "end_line": 12,
+      "parent_id": "py.services.user_service.UserService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.user_service.UserService.login_user",
+      "type": "method",
+      "name": "login_user",
+      "file_path": "python/services/user_service.py",
+      "start_line": 14,
+      "end_line": 23,
+      "parent_id": "py.services.user_service.UserService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.services.user_service.UserService.get_user_profile",
+      "type": "method",
+      "name": "get_user_profile",
+      "file_path": "python/services/user_service.py",
+      "start_line": 25,
+      "end_line": 30,
+      "parent_id": "py.services.user_service.UserService",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.utils.formatting",
+      "type": "module",
+      "name": "formatting.py",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 1,
+      "end_line": 41,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.utils.formatting.format_user_record",
+      "type": "function",
+      "name": "format_user_record",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 6,
+      "end_line": 18,
+      "parent_id": "py.utils.formatting",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.utils.formatting.format_audit_log",
+      "type": "function",
+      "name": "format_audit_log",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 21,
+      "end_line": 33,
+      "parent_id": "py.utils.formatting",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.utils.formatting.truncate_text",
+      "type": "function",
+      "name": "truncate_text",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 36,
+      "end_line": 40,
+      "parent_id": "py.utils.formatting",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.main",
+      "type": "module",
+      "name": "main.py",
+      "file_path": "python/main.py",
+      "start_line": 1,
+      "end_line": 34,
+      "parent_id": null,
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "py.main.run_pipeline",
+      "type": "function",
+      "name": "run_pipeline",
+      "file_path": "python/main.py",
+      "start_line": 13,
+      "end_line": 29,
+      "parent_id": "py.main",
+      "language": "python",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model",
+      "type": "module",
+      "name": "user.model.ts",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 1,
+      "end_line": 50,
+      "parent_id": null,
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model.UserRecord",
+      "type": "interface",
+      "name": "UserRecord",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 4,
+      "end_line": 9,
+      "parent_id": "ts.models.user_model",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model.UserModel",
+      "type": "class",
+      "name": "UserModel",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 14,
+      "end_line": 49,
+      "parent_id": "ts.models.user_model",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model.UserModel.constructor",
+      "type": "method",
+      "name": "constructor",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 23,
+      "end_line": 29,
+      "parent_id": "ts.models.user_model.UserModel",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model.UserModel.toJSON",
+      "type": "method",
+      "name": "toJSON",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 34,
+      "end_line": 41,
+      "parent_id": "ts.models.user_model.UserModel",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.models.user_model.UserModel.getFormattedDetails",
+      "type": "method",
+      "name": "getFormattedDetails",
+      "file_path": "typescript/models/user.model.ts",
+      "start_line": 46,
+      "end_line": 48,
+      "parent_id": "ts.models.user_model.UserModel",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.interfaces.repository_interface",
+      "type": "module",
+      "name": "repository.interface.ts",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "start_line": 1,
+      "end_line": 23,
+      "parent_id": null,
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.interfaces.repository_interface.Repository",
+      "type": "interface",
+      "name": "Repository",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "start_line": 4,
+      "end_line": 22,
+      "parent_id": "ts.interfaces.repository_interface",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.interfaces.repository_interface.Repository.findById",
+      "type": "method",
+      "name": "findById",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "start_line": 9,
+      "end_line": 9,
+      "parent_id": "ts.interfaces.repository_interface.Repository",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.interfaces.repository_interface.Repository.save",
+      "type": "method",
+      "name": "save",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "start_line": 15,
+      "end_line": 15,
+      "parent_id": "ts.interfaces.repository_interface.Repository",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.interfaces.repository_interface.Repository.delete",
+      "type": "method",
+      "name": "delete",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "start_line": 21,
+      "end_line": 21,
+      "parent_id": "ts.interfaces.repository_interface.Repository",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.services.user_service",
+      "type": "module",
+      "name": "user.service.ts",
+      "file_path": "typescript/services/user.service.ts",
+      "start_line": 1,
+      "end_line": 35,
+      "parent_id": null,
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.services.user_service.UserService",
+      "type": "class",
+      "name": "UserService",
+      "file_path": "typescript/services/user.service.ts",
+      "start_line": 7,
+      "end_line": 34,
+      "parent_id": "ts.services.user_service",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.services.user_service.UserService.findById",
+      "type": "method",
+      "name": "findById",
+      "file_path": "typescript/services/user.service.ts",
+      "start_line": 14,
+      "end_line": 16,
+      "parent_id": "ts.services.user_service.UserService",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.services.user_service.UserService.save",
+      "type": "method",
+      "name": "save",
+      "file_path": "typescript/services/user.service.ts",
+      "start_line": 22,
+      "end_line": 25,
+      "parent_id": "ts.services.user_service.UserService",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.services.user_service.UserService.delete",
+      "type": "method",
+      "name": "delete",
+      "file_path": "typescript/services/user.service.ts",
+      "start_line": 31,
+      "end_line": 33,
+      "parent_id": "ts.services.user_service.UserService",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.index",
+      "type": "module",
+      "name": "index.ts",
+      "file_path": "typescript/index.ts",
+      "start_line": 1,
+      "end_line": 23,
+      "parent_id": null,
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "ts.index.main",
+      "type": "function",
+      "name": "main",
+      "file_path": "typescript/index.ts",
+      "start_line": 7,
+      "end_line": 20,
+      "parent_id": "ts.index",
+      "language": "typescript",
+      "has_docstring": true
+    },
+    {
+      "id": "docs.architecture",
+      "type": "module",
+      "name": "ARCHITECTURE.md",
+      "file_path": "docs/ARCHITECTURE.md",
+      "start_line": 1,
+      "end_line": 54,
+      "parent_id": null,
+      "language": "markdown",
+      "has_docstring": true
+    },
+    {
+      "id": "readme",
+      "type": "module",
+      "name": "README.md",
+      "file_path": "README.md",
+      "start_line": 1,
+      "end_line": 55,
+      "parent_id": null,
+      "language": "markdown",
+      "has_docstring": true
+    }
+  ],
+  "relationships": [
+    {
+      "source_id": "py.models.base",
+      "target_id": "py.models.base.BaseModel",
+      "type": "CONTAINS",
+      "file_path": "python/models/base.py",
+      "line": 8
+    },
+    {
+      "source_id": "py.models.base.BaseModel",
+      "target_id": "py.models.base.BaseModel.__init__",
+      "type": "CONTAINS",
+      "file_path": "python/models/base.py",
+      "line": 11
+    },
+    {
+      "source_id": "py.models.base.BaseModel",
+      "target_id": "py.models.base.BaseModel.to_dict",
+      "type": "CONTAINS",
+      "file_path": "python/models/base.py",
+      "line": 16
+    },
+    {
+      "source_id": "py.models.base.BaseModel",
+      "target_id": "py.models.base.BaseModel.get_metadata",
+      "type": "CONTAINS",
+      "file_path": "python/models/base.py",
+      "line": 23
+    },
+    {
+      "source_id": "py.models.base.BaseModel",
+      "target_id": "py.models.base.BaseModel.validate",
+      "type": "CONTAINS",
+      "file_path": "python/models/base.py",
+      "line": 30
+    },
+    {
+      "source_id": "py.models.user",
+      "target_id": "py.models.base.BaseModel",
+      "type": "IMPORTS",
+      "file_path": "python/models/user.py",
+      "line": 4
+    },
+    {
+      "source_id": "py.models.user.UserModel",
+      "target_id": "py.models.base.BaseModel",
+      "type": "INHERITS",
+      "file_path": "python/models/user.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.models.user",
+      "target_id": "py.models.user.UserModel",
+      "type": "CONTAINS",
+      "file_path": "python/models/user.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.models.user.UserModel",
+      "target_id": "py.models.user.UserModel.__init__",
+      "type": "CONTAINS",
+      "file_path": "python/models/user.py",
+      "line": 10
+    },
+    {
+      "source_id": "py.models.user.UserModel",
+      "target_id": "py.models.user.UserModel.to_dict",
+      "type": "CONTAINS",
+      "file_path": "python/models/user.py",
+      "line": 16
+    },
+    {
+      "source_id": "py.models.user.UserModel",
+      "target_id": "py.models.user.UserModel.validate",
+      "type": "CONTAINS",
+      "file_path": "python/models/user.py",
+      "line": 25
+    },
+    {
+      "source_id": "py.models.user.UserModel",
+      "target_id": "py.models.user.UserModel.format_user_details",
+      "type": "CONTAINS",
+      "file_path": "python/models/user.py",
+      "line": 31
+    },
+    {
+      "source_id": "py.models.user.UserModel.__init__",
+      "target_id": "py.models.base.BaseModel.__init__",
+      "type": "CALLS",
+      "file_path": "python/models/user.py",
+      "line": 12
+    },
+    {
+      "source_id": "py.models.user.UserModel.to_dict",
+      "target_id": "py.models.base.BaseModel.to_dict",
+      "type": "CALLS",
+      "file_path": "python/models/user.py",
+      "line": 18
+    },
+    {
+      "source_id": "py.models.admin",
+      "target_id": "py.models.user.UserModel",
+      "type": "IMPORTS",
+      "file_path": "python/models/admin.py",
+      "line": 4
+    },
+    {
+      "source_id": "py.models.admin.AdminUser",
+      "target_id": "py.models.user.UserModel",
+      "type": "INHERITS",
+      "file_path": "python/models/admin.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.models.admin",
+      "target_id": "py.models.admin.AdminUser",
+      "type": "CONTAINS",
+      "file_path": "python/models/admin.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.models.admin.AdminUser",
+      "target_id": "py.models.admin.AdminUser.__init__",
+      "type": "CONTAINS",
+      "file_path": "python/models/admin.py",
+      "line": 10
+    },
+    {
+      "source_id": "py.models.admin.AdminUser",
+      "target_id": "py.models.admin.AdminUser.to_dict",
+      "type": "CONTAINS",
+      "file_path": "python/models/admin.py",
+      "line": 15
+    },
+    {
+      "source_id": "py.models.admin.AdminUser",
+      "target_id": "py.models.admin.AdminUser.has_permission",
+      "type": "CONTAINS",
+      "file_path": "python/models/admin.py",
+      "line": 21
+    },
+    {
+      "source_id": "py.models.admin.AdminUser",
+      "target_id": "py.models.admin.AdminUser.validate",
+      "type": "CONTAINS",
+      "file_path": "python/models/admin.py",
+      "line": 25
+    },
+    {
+      "source_id": "py.models.admin.AdminUser.__init__",
+      "target_id": "py.models.user.UserModel.__init__",
+      "type": "CALLS",
+      "file_path": "python/models/admin.py",
+      "line": 12
+    },
+    {
+      "source_id": "py.models.admin.AdminUser.to_dict",
+      "target_id": "py.models.user.UserModel.to_dict",
+      "type": "CALLS",
+      "file_path": "python/models/admin.py",
+      "line": 17
+    },
+    {
+      "source_id": "py.models.admin.AdminUser.validate",
+      "target_id": "py.models.user.UserModel.validate",
+      "type": "CALLS",
+      "file_path": "python/models/admin.py",
+      "line": 27
+    },
+    {
+      "source_id": "py.interfaces.repository",
+      "target_id": "py.interfaces.repository.Repository",
+      "type": "CONTAINS",
+      "file_path": "python/interfaces/repository.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.interfaces.repository.Repository",
+      "target_id": "py.interfaces.repository.Repository.save",
+      "type": "CONTAINS",
+      "file_path": "python/interfaces/repository.py",
+      "line": 10
+    },
+    {
+      "source_id": "py.interfaces.repository.Repository",
+      "target_id": "py.interfaces.repository.Repository.find_by_id",
+      "type": "CONTAINS",
+      "file_path": "python/interfaces/repository.py",
+      "line": 15
+    },
+    {
+      "source_id": "py.interfaces.repository.Repository",
+      "target_id": "py.interfaces.repository.Repository.delete",
+      "type": "CONTAINS",
+      "file_path": "python/interfaces/repository.py",
+      "line": 20
+    },
+    {
+      "source_id": "py.services.auth_service",
+      "target_id": "py.interfaces.repository.Repository",
+      "type": "IMPORTS",
+      "file_path": "python/services/auth_service.py",
+      "line": 4
+    },
+    {
+      "source_id": "py.services.auth_service",
+      "target_id": "py.models.user.UserModel",
+      "type": "IMPORTS",
+      "file_path": "python/services/auth_service.py",
+      "line": 5
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.interfaces.repository.Repository",
+      "type": "IMPLEMENTS",
+      "file_path": "python/services/auth_service.py",
+      "line": 8
+    },
+    {
+      "source_id": "py.services.auth_service",
+      "target_id": "py.services.auth_service.AuthService",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 8
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.__init__",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 11
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.save",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 15
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.find_by_id",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 20
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.delete",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 24
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.validate",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 28
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService",
+      "target_id": "py.services.auth_service.AuthService.authenticate_user",
+      "type": "CONTAINS",
+      "file_path": "python/services/auth_service.py",
+      "line": 35
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.models.user.UserModel.__init__",
+      "type": "CALLS",
+      "file_path": "python/services/auth_service.py",
+      "line": 37
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.models.user.UserModel.validate",
+      "type": "CALLS",
+      "file_path": "python/services/auth_service.py",
+      "line": 38
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.models.user.UserModel.to_dict",
+      "type": "CALLS",
+      "file_path": "python/services/auth_service.py",
+      "line": 41
+    },
+    {
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.services.auth_service.AuthService.save",
+      "type": "CALLS",
+      "file_path": "python/services/auth_service.py",
+      "line": 42
+    },
+    {
+      "source_id": "py.services.user_service",
+      "target_id": "py.services.auth_service.AuthService",
+      "type": "IMPORTS",
+      "file_path": "python/services/user_service.py",
+      "line": 4
+    },
+    {
+      "source_id": "py.services.user_service",
+      "target_id": "py.services.user_service.UserService",
+      "type": "CONTAINS",
+      "file_path": "python/services/user_service.py",
+      "line": 7
+    },
+    {
+      "source_id": "py.services.user_service.UserService",
+      "target_id": "py.services.user_service.UserService.__init__",
+      "type": "CONTAINS",
+      "file_path": "python/services/user_service.py",
+      "line": 10
+    },
+    {
+      "source_id": "py.services.user_service.UserService",
+      "target_id": "py.services.user_service.UserService.login_user",
+      "type": "CONTAINS",
+      "file_path": "python/services/user_service.py",
+      "line": 14
+    },
+    {
+      "source_id": "py.services.user_service.UserService",
+      "target_id": "py.services.user_service.UserService.get_user_profile",
+      "type": "CONTAINS",
+      "file_path": "python/services/user_service.py",
+      "line": 25
+    },
+    {
+      "source_id": "py.services.user_service.UserService.login_user",
+      "target_id": "py.services.auth_service.AuthService.validate",
+      "type": "CALLS",
+      "file_path": "python/services/user_service.py",
+      "line": 16
+    },
+    {
+      "source_id": "py.services.user_service.UserService.login_user",
+      "target_id": "py.services.auth_service.AuthService.authenticate_user",
+      "type": "CALLS",
+      "file_path": "python/services/user_service.py",
+      "line": 19
+    },
+    {
+      "source_id": "py.services.user_service.UserService.get_user_profile",
+      "target_id": "py.services.auth_service.AuthService.find_by_id",
+      "type": "CALLS",
+      "file_path": "python/services/user_service.py",
+      "line": 27
+    },
+    {
+      "source_id": "py.utils.formatting",
+      "target_id": "py.utils.formatting.format_user_record",
+      "type": "CONTAINS",
+      "file_path": "python/utils/formatting.py",
+      "line": 6
+    },
+    {
+      "source_id": "py.utils.formatting",
+      "target_id": "py.utils.formatting.format_audit_log",
+      "type": "CONTAINS",
+      "file_path": "python/utils/formatting.py",
+      "line": 21
+    },
+    {
+      "source_id": "py.utils.formatting",
+      "target_id": "py.utils.formatting.truncate_text",
+      "type": "CONTAINS",
+      "file_path": "python/utils/formatting.py",
+      "line": 36
+    },
+    {
+      "source_id": "py.main",
+      "target_id": "py.services.auth_service.AuthService",
+      "type": "IMPORTS",
+      "file_path": "python/main.py",
+      "line": 9
+    },
+    {
+      "source_id": "py.main",
+      "target_id": "py.services.user_service.UserService",
+      "type": "IMPORTS",
+      "file_path": "python/main.py",
+      "line": 10
+    },
+    {
+      "source_id": "py.main",
+      "target_id": "py.main.run_pipeline",
+      "type": "CONTAINS",
+      "file_path": "python/main.py",
+      "line": 13
+    },
+    {
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.auth_service.AuthService.__init__",
+      "type": "CALLS",
+      "file_path": "python/main.py",
+      "line": 15
+    },
+    {
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.user_service.UserService.__init__",
+      "type": "CALLS",
+      "file_path": "python/main.py",
+      "line": 16
+    },
+    {
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.user_service.UserService.login_user",
+      "type": "CALLS",
+      "file_path": "python/main.py",
+      "line": 25
+    },
+    {
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.user_service.UserService.get_user_profile",
+      "type": "CALLS",
+      "file_path": "python/main.py",
+      "line": 28
+    },
+    {
+      "source_id": "py.main",
+      "target_id": "py.main.run_pipeline",
+      "type": "CALLS",
+      "file_path": "python/main.py",
+      "line": 33
+    },
+    {
+      "source_id": "ts.models.user_model.UserModel",
+      "target_id": "ts.models.user_model.UserRecord",
+      "type": "IMPLEMENTS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 14
+    },
+    {
+      "source_id": "ts.models.user_model",
+      "target_id": "ts.models.user_model.UserRecord",
+      "type": "CONTAINS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 4
+    },
+    {
+      "source_id": "ts.models.user_model",
+      "target_id": "ts.models.user_model.UserModel",
+      "type": "CONTAINS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 14
+    },
+    {
+      "source_id": "ts.models.user_model.UserModel",
+      "target_id": "ts.models.user_model.UserModel.constructor",
+      "type": "CONTAINS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 23
+    },
+    {
+      "source_id": "ts.models.user_model.UserModel",
+      "target_id": "ts.models.user_model.UserModel.toJSON",
+      "type": "CONTAINS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 34
+    },
+    {
+      "source_id": "ts.models.user_model.UserModel",
+      "target_id": "ts.models.user_model.UserModel.getFormattedDetails",
+      "type": "CONTAINS",
+      "file_path": "typescript/models/user.model.ts",
+      "line": 46
+    },
+    {
+      "source_id": "ts.interfaces.repository_interface",
+      "target_id": "ts.interfaces.repository_interface.Repository",
+      "type": "CONTAINS",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "line": 4
+    },
+    {
+      "source_id": "ts.interfaces.repository_interface.Repository",
+      "target_id": "ts.interfaces.repository_interface.Repository.findById",
+      "type": "CONTAINS",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "line": 9
+    },
+    {
+      "source_id": "ts.interfaces.repository_interface.Repository",
+      "target_id": "ts.interfaces.repository_interface.Repository.save",
+      "type": "CONTAINS",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "line": 15
+    },
+    {
+      "source_id": "ts.interfaces.repository_interface.Repository",
+      "target_id": "ts.interfaces.repository_interface.Repository.delete",
+      "type": "CONTAINS",
+      "file_path": "typescript/interfaces/repository.interface.ts",
+      "line": 21
+    },
+    {
+      "source_id": "ts.services.user_service",
+      "target_id": "ts.interfaces.repository_interface.Repository",
+      "type": "IMPORTS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 1
+    },
+    {
+      "source_id": "ts.services.user_service",
+      "target_id": "ts.models.user_model.UserModel",
+      "type": "IMPORTS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 2
+    },
+    {
+      "source_id": "ts.services.user_service.UserService",
+      "target_id": "ts.interfaces.repository_interface.Repository",
+      "type": "IMPLEMENTS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 7
+    },
+    {
+      "source_id": "ts.services.user_service",
+      "target_id": "ts.services.user_service.UserService",
+      "type": "CONTAINS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 7
+    },
+    {
+      "source_id": "ts.services.user_service.UserService",
+      "target_id": "ts.services.user_service.UserService.findById",
+      "type": "CONTAINS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 14
+    },
+    {
+      "source_id": "ts.services.user_service.UserService",
+      "target_id": "ts.services.user_service.UserService.save",
+      "type": "CONTAINS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 22
+    },
+    {
+      "source_id": "ts.services.user_service.UserService",
+      "target_id": "ts.services.user_service.UserService.delete",
+      "type": "CONTAINS",
+      "file_path": "typescript/services/user.service.ts",
+      "line": 31
+    },
+    {
+      "source_id": "ts.index",
+      "target_id": "ts.services.user_service.UserService",
+      "type": "IMPORTS",
+      "file_path": "typescript/index.ts",
+      "line": 1
+    },
+    {
+      "source_id": "ts.index",
+      "target_id": "ts.models.user_model.UserModel",
+      "type": "IMPORTS",
+      "file_path": "typescript/index.ts",
+      "line": 2
+    },
+    {
+      "source_id": "ts.index",
+      "target_id": "ts.index.main",
+      "type": "CONTAINS",
+      "file_path": "typescript/index.ts",
+      "line": 7
+    },
+    {
+      "source_id": "ts.index.main",
+      "target_id": "ts.models.user_model.UserModel.constructor",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 9
+    },
+    {
+      "source_id": "ts.index.main",
+      "target_id": "ts.models.user_model.UserModel.getFormattedDetails",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 11
+    },
+    {
+      "source_id": "ts.index.main",
+      "target_id": "ts.services.user_service.UserService.save",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 12
+    },
+    {
+      "source_id": "ts.index.main",
+      "target_id": "ts.services.user_service.UserService.findById",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 14
+    },
+    {
+      "source_id": "ts.index.main",
+      "target_id": "ts.models.user_model.UserModel.toJSON",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 16
+    },
+    {
+      "source_id": "ts.index",
+      "target_id": "ts.index.main",
+      "type": "CALLS",
+      "file_path": "typescript/index.ts",
+      "line": 22
+    }
+  ],
+  "test_scenarios": [
+    {
+      "name": "multi_hop_call_chain",
+      "description": "Validates that tracing calls starting from entrypoint main.py -> user_service -> auth_service -> base.py correctly reconstructs the full 3-hop execution flow.",
+      "relevant_entity_ids": [
+        "py.main.run_pipeline",
+        "py.services.user_service.UserService.login_user",
+        "py.services.auth_service.AuthService.authenticate_user",
+        "py.models.user.UserModel.to_dict",
+        "py.models.base.BaseModel.to_dict"
+      ],
+      "expected_behavior": "Retrieval should return the ordered CALLS chain: py.main.run_pipeline -> UserService.login_user -> AuthService.authenticate_user -> UserModel.to_dict -> BaseModel.to_dict."
+    },
+    {
+      "name": "multi_level_inheritance",
+      "description": "Validates that resolving class context for AdminUser traverses multi-level inheritance to pull in both UserModel and BaseModel context.",
+      "relevant_entity_ids": [
+        "py.models.admin.AdminUser",
+        "py.models.user.UserModel",
+        "py.models.base.BaseModel"
+      ],
+      "expected_behavior": "Graph resolution should traverse INHERITS edges AdminUser -> UserModel and UserModel -> BaseModel to construct complete inherited schema and method definitions."
+    },
+    {
+      "name": "interface_implementation",
+      "description": "Validates resolution of abstract interfaces and concrete class implementations across Python ABCs and TypeScript interfaces.",
+      "relevant_entity_ids": [
+        "py.services.auth_service.AuthService",
+        "py.interfaces.repository.Repository",
+        "ts.services.user_service.UserService",
+        "ts.interfaces.repository_interface.Repository"
+      ],
+      "expected_behavior": "Querying for implementations of Repository should return AuthService in Python and UserService in TypeScript via IMPLEMENTS edges."
+    },
+    {
+      "name": "method_disambiguation",
+      "description": "Validates that queries targeting a method named 'validate' accurately differentiate UserModel.validate from AuthService.validate based on AST scope and signature.",
+      "relevant_entity_ids": [
+        "py.models.user.UserModel.validate",
+        "py.services.auth_service.AuthService.validate"
+      ],
+      "expected_behavior": "Entity extraction and symbol search must distinguish UserModel.validate() (entity validation) from AuthService.validate(token) (token verification) without symbol collision."
+    },
+    {
+      "name": "textual_similarity_no_conflation",
+      "description": "Validates that textually/structurally similar functions format_user_record and format_audit_log are retrieved distinctly according to domain semantics.",
+      "relevant_entity_ids": [
+        "py.utils.formatting.format_user_record",
+        "py.utils.formatting.format_audit_log"
+      ],
+      "expected_behavior": "Embedding vector search combined with graph contextualization must separate user record formatting from system audit log formatting despite high cosine similarity."
+    },
+    {
+      "name": "orphan_file_isolation",
+      "description": "Validates that formatting.py is indexed correctly as an isolated module with zero outgoing/incoming CALLS or IMPORTS relationships.",
+      "relevant_entity_ids": [
+        "py.utils.formatting",
+        "py.utils.formatting.format_user_record",
+        "py.utils.formatting.format_audit_log",
+        "py.utils.formatting.truncate_text"
+      ],
+      "expected_behavior": "Vector indexing should make utility functions searchable while relationship resolution reports 0 external IMPORTS/CALLS edges connecting formatting.py to the rest of the codebase."
+    }
+  ]
+}
