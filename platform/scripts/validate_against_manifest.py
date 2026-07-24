@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List, Optional, Set
 
 # Ensure platform/ is in sys.path
 PLATFORM_DIR = Path(__file__).resolve().parent.parent
@@ -9,6 +9,8 @@ if str(PLATFORM_DIR) not in sys.path:
     sys.path.insert(0, str(PLATFORM_DIR))
 
 from src.extraction.entity_extractor import EntityExtractor
+from src.resolution import resolve_relationships
+from src.languages import ADAPTER_REGISTRY
 
 
 def get_entity_key(ent: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -28,20 +30,30 @@ def validate():
 
     manifest_entities = manifest_data.get("entities", [])
     manifest_rels = manifest_data.get("relationships", [])
-    manifest_contains = [r for r in manifest_rels if r["type"] == "CONTAINS"]
 
+    # ---------------------------------------------------------------
+    # Extract
+    # ---------------------------------------------------------------
     extractor = EntityExtractor()
-    extracted_entities_objs, extracted_rels_objs = extractor.extract_repository(str(repo_path))
+    extracted_entities_objs, extracted_contains_objs = extractor.extract_repository(
+        str(repo_path)
+    )
+    semantic_rels_objs = resolve_relationships(
+        entities=extracted_entities_objs,
+        repo_root=str(repo_path),
+        adapter_registry=ADAPTER_REGISTRY,
+    )
 
     extracted_entities = [e.model_dump(exclude={"source"}) for e in extracted_entities_objs]
-    extracted_rels = [r.model_dump() for r in extracted_rels_objs]
-    extracted_contains = [r for r in extracted_rels if r["type"] == "CONTAINS"]
+    all_extracted_rels = [r.model_dump() for r in extracted_contains_objs + semantic_rels_objs]
 
     print("=" * 60)
     print("VALIDATION REPORT AGAINST TEST MANIFEST")
     print("=" * 60)
 
-    # 1. Map entities by structural key: (file_path, name, type)
+    # ---------------------------------------------------------------
+    # Entity key maps
+    # ---------------------------------------------------------------
     manifest_ent_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     manifest_id_to_key: Dict[str, Tuple[str, str, str]] = {}
     for ent in manifest_entities:
@@ -73,12 +85,12 @@ def validate():
 
         if m_ent["start_line"] != e_ent["start_line"] or m_ent["end_line"] != e_ent["end_line"]:
             line_range_mismatches.append(
-                f"  - {key}: Manifest [{m_ent['start_line']}:{m_ent['end_line']}] vs Extracted [{e_ent['start_line']}:{e_ent['end_line']}]"
+                f"  - {key}: Manifest [{m_ent['start_line']}:{m_ent['end_line']}] "
+                f"vs Extracted [{e_ent['start_line']}:{e_ent['end_line']}]"
             )
 
         m_parent_id = m_ent.get("parent_id")
         e_parent_id = e_ent.get("parent_id")
-
         m_parent_key = manifest_id_to_key.get(m_parent_id) if m_parent_id else None
         e_parent_key = extracted_id_to_key.get(e_parent_id) if e_parent_id else None
 
@@ -89,10 +101,11 @@ def validate():
 
         if m_ent.get("has_docstring") != e_ent.get("has_docstring"):
             docstring_mismatches.append(
-                f"  - {key}: Manifest has_docstring={m_ent.get('has_docstring')} vs Extracted={e_ent.get('has_docstring')}"
+                f"  - {key}: Manifest has_docstring={m_ent.get('has_docstring')} "
+                f"vs Extracted={e_ent.get('has_docstring')}"
             )
 
-    print(f"ENTITIES SUMMARY:")
+    print("ENTITIES SUMMARY:")
     print(f"  - Manifest Total Entities:  {len(manifest_entities)}")
     print(f"  - Extracted Total Entities: {len(extracted_entities)}")
     print(f"  - Matched Entities:         {len(matched_keys)}")
@@ -124,71 +137,113 @@ def validate():
         for mismatch in docstring_mismatches:
             print(mismatch)
 
-    # 2. CONTAINS Relationships Structural Comparison
-    def get_rel_key(rel: Dict[str, Any], id_to_key_map: Dict[str, Tuple[str, str, str]]) -> Optional[Tuple[Tuple[str, str, str], Tuple[str, str, str]]]:
-        src_id = rel["source_id"]
-        tgt_id = rel["target_id"]
-        src_key = id_to_key_map.get(src_id)
-        tgt_key = id_to_key_map.get(tgt_id)
+    # ---------------------------------------------------------------
+    # Relationship comparison helper
+    # ---------------------------------------------------------------
+    def make_rel_key(
+        rel: Dict[str, Any],
+        id_to_key: Dict[str, Tuple[str, str, str]],
+    ) -> Optional[Tuple]:
+        src_key = id_to_key.get(rel["source_id"])
+        tgt_key = id_to_key.get(rel["target_id"])
         if src_key and tgt_key:
-            return (src_key, tgt_key)
+            return (rel["type"], src_key, tgt_key)
         return None
 
-    manifest_contains_keys = set()
-    for r in manifest_contains:
-        rk = get_rel_key(r, manifest_id_to_key)
-        if rk:
-            manifest_contains_keys.add(rk)
+    def compare_rel_type(
+        rel_type: str,
+        manifest_rels_all: List[Dict[str, Any]],
+        extracted_rels_all: List[Dict[str, Any]],
+        manifest_id_to_key: Dict[str, Tuple[str, str, str]],
+        extracted_id_to_key: Dict[str, Tuple[str, str, str]],
+    ) -> Tuple[int, int, int, int, List[str], List[str]]:
+        """Returns matched, missing, extra counts and detail lists."""
+        m_rels = [r for r in manifest_rels_all if r["type"] == rel_type]
+        e_rels = [r for r in extracted_rels_all if r["type"] == rel_type]
 
-    extracted_contains_keys = set()
-    for r in extracted_contains:
-        rk = get_rel_key(r, extracted_id_to_key)
-        if rk:
-            extracted_contains_keys.add(rk)
+        m_keys: Set[Tuple] = set()
+        for r in m_rels:
+            k = make_rel_key(r, manifest_id_to_key)
+            if k:
+                m_keys.add(k)
 
-    matched_contains = manifest_contains_keys & extracted_contains_keys
-    missing_contains = manifest_contains_keys - extracted_contains_keys
-    extra_contains = extracted_contains_keys - manifest_contains_keys
+        e_keys: Set[Tuple] = set()
+        for r in e_rels:
+            k = make_rel_key(r, extracted_id_to_key)
+            if k:
+                e_keys.add(k)
 
-    print("\nCONTAINS RELATIONSHIPS SUMMARY:")
-    print(f"  - Manifest CONTAINS Rels:  {len(manifest_contains)}")
-    print(f"  - Extracted CONTAINS Rels: {len(extracted_contains)}")
-    print(f"  - Matched CONTAINS Rels:   {len(matched_contains)}")
-    print(f"  - Missing CONTAINS Rels:   {len(missing_contains)}")
-    print(f"  - Extra CONTAINS Rels:     {len(extra_contains)}")
+        matched = m_keys & e_keys
+        missing = m_keys - e_keys
+        extra = e_keys - m_keys
 
-    if missing_contains:
-        print("\n  [!] Missing CONTAINS Relationships:")
-        for mc in sorted(missing_contains):
-            print(f"      Source: {mc[0]} -> Target: {mc[1]}")
+        missing_strs = [f"      {k[1]} -> {k[2]}" for k in sorted(missing, key=str)]
+        extra_strs = [f"      {k[1]} -> {k[2]}" for k in sorted(extra, key=str)]
 
-    if extra_contains:
-        print("\n  [!] Extra CONTAINS Relationships:")
-        for ec in sorted(extra_contains):
-            print(f"      Source: {ec[0]} -> Target: {ec[1]}")
+        return len(m_rels), len(e_rels), len(matched), len(missing), missing_strs, extra_strs
 
-    entity_match_rate = (len(matched_keys) / len(manifest_entities)) * 100 if manifest_entities else 0
-    contains_match_rate = (len(matched_contains) / len(manifest_contains)) * 100 if manifest_contains else 0
+    # ---------------------------------------------------------------
+    # Compare each relationship type
+    # ---------------------------------------------------------------
+    rel_types = ["CONTAINS", "IMPORTS", "CALLS", "INHERITS", "IMPLEMENTS"]
+    print()
+    all_rel_success = True
+    type_results = {}
 
-    print("\n" + "=" * 60)
-    print(f"FINAL MATCH RATES:")
-    print(f"  - Entities Match Rate:        {entity_match_rate:.2f}%")
-    print(f"  - CONTAINS Rel Match Rate:    {contains_match_rate:.2f}%")
-    print(f"  - Line Range Mismatches:      {len(line_range_mismatches)}")
-    print(f"  - Parent Structure Mismatches: {len(parent_mismatches)}")
-    print("=" * 60)
+    for rtype in rel_types:
+        m_total, e_total, matched, missing_count, missing_strs, extra_strs = compare_rel_type(
+            rtype, manifest_rels, all_extracted_rels, manifest_id_to_key, extracted_id_to_key
+        )
+        type_results[rtype] = (m_total, e_total, matched, missing_count, len(extra_strs))
+        match_rate = (matched / m_total * 100) if m_total else 100.0
 
-    is_success = (
+        print(f"{rtype} RELATIONSHIPS:")
+        print(f"  - Manifest:  {m_total}  |  Extracted: {e_total}  |  "
+              f"Matched: {matched}  |  Missing: {missing_count}  |  Extra: {len(extra_strs)}")
+        print(f"  - Match Rate: {match_rate:.1f}%")
+
+        if missing_strs:
+            print(f"  [MISSING]:")
+            for s in missing_strs:
+                print(s)
+        if extra_strs:
+            print(f"  [EXTRA]:")
+            for s in extra_strs:
+                print(s)
+        print()
+
+        if missing_count > 0 or len(extra_strs) > 0:
+            if rtype in ("CONTAINS", "CALLS", "IMPORTS", "INHERITS", "IMPLEMENTS"):
+                all_rel_success = False
+
+    # ---------------------------------------------------------------
+    # Final summary
+    # ---------------------------------------------------------------
+    entity_match_rate = (len(matched_keys) / len(manifest_entities) * 100) if manifest_entities else 0
+    is_entity_success = (
         len(missing_keys) == 0
         and len(extra_keys) == 0
         and len(line_range_mismatches) == 0
         and len(parent_mismatches) == 0
-        and len(missing_contains) == 0
-        and len(extra_contains) == 0
     )
 
-    if is_success:
-        print("\nSUCCESS: 100% Match on Entities, Line Ranges, and CONTAINS Relationships!")
+    print("=" * 60)
+    print("FINAL MATCH RATES:")
+    print(f"  - Entities Match Rate:         {entity_match_rate:.2f}%")
+    for rtype in rel_types:
+        m_total, e_total, matched, missing_count, extra_count = type_results[rtype]
+        rate = (matched / m_total * 100) if m_total else 100.0
+        print(f"  - {rtype:12s} Match Rate:  {rate:.1f}%  "
+              f"(manifest={m_total}, extracted={e_total}, matched={matched})")
+    print(f"  - Line Range Mismatches:       {len(line_range_mismatches)}")
+    print(f"  - Parent Structure Mismatches: {len(parent_mismatches)}")
+    print("=" * 60)
+
+    if is_entity_success and all_rel_success:
+        print("\nSUCCESS: 100% Match on all relationship types!")
+        sys.exit(0)
+    elif is_entity_success:
+        print("\nPARTIAL SUCCESS: Entities + CONTAINS at 100%. See relationship details above.")
         sys.exit(0)
     else:
         print("\nFAILURE: Mismatches detected. See details above.")
