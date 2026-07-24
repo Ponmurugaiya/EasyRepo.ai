@@ -27,8 +27,16 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Set, Dict
 
 import tree_sitter
-from src.extraction.models import Entity, Relationship
+from src.extraction.models import Entity, Relationship, Language
 from src.extraction.parser import TreeSitterParser
+
+
+EXTENSION_MAP: Dict[str, Language] = {
+    ".py": "python",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".md": "markdown",
+}
 
 
 class EntityExtractor:
@@ -37,7 +45,7 @@ class EntityExtractor:
     def __init__(self) -> None:
         self.parser = TreeSitterParser()
 
-    def generate_module_id(self, relative_path: str, language: str) -> str:
+    def generate_module_id(self, relative_path: str, language: Language) -> str:
         p = Path(relative_path).as_posix()
         if language == "python":
             if p.startswith("python/"):
@@ -73,13 +81,8 @@ class EntityExtractor:
                 full_path = Path(root) / file
                 rel_path = full_path.relative_to(repo_dir).as_posix()
 
-                if file.endswith(".py"):
-                    language = "python"
-                elif file.endswith(".ts") or file.endswith(".tsx"):
-                    language = "typescript"
-                elif file.endswith(".md"):
-                    language = "markdown"
-                else:
+                language = EXTENSION_MAP.get(Path(file).suffix)
+                if language is None:
                     continue
 
                 file_ents, file_rels = self.extract_file(str(full_path), rel_path, language)
@@ -88,7 +91,7 @@ class EntityExtractor:
 
         return entities, relationships
 
-    def extract_file(self, full_path: str, rel_path: str, language: str) -> Tuple[List[Entity], List[Relationship]]:
+    def extract_file(self, full_path: str, rel_path: str, language: Language) -> Tuple[List[Entity], List[Relationship]]:
         with open(full_path, "r", encoding="utf-8", errors="replace") as f:
             source_text = f.read()
 
@@ -124,6 +127,9 @@ class EntityExtractor:
 
         root_node = tree.root_node
 
+        file_ents: List[Entity] = []
+        file_rels: List[Relationship] = []
+
         if language == "python":
             file_ents, file_rels, has_mod_doc = self._extract_python(root_node, source_bytes, module_entity, rel_path)
             module_entity.has_docstring = has_mod_doc
@@ -137,7 +143,7 @@ class EntityExtractor:
         for ent in file_ents:
             relationships.append(
                 Relationship(
-                    source_id=ent.parent_id,
+                    source_id=ent.parent_id or module_id,
                     target_id=ent.id,
                     type="CONTAINS",
                     file_path=ent.file_path,

@@ -2,6 +2,9 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+Language = Literal["python", "typescript", "markdown"]
+
+
 class Entity(BaseModel):
     id: str
     type: Literal["module", "class", "interface", "function", "method", "doc_block"]
@@ -10,7 +13,7 @@ class Entity(BaseModel):
     start_line: int
     end_line: int
     parent_id: Optional[str] = None
-    language: Literal["python", "typescript", "markdown"]
+    language: Language
     has_docstring: bool
     source: str = ""
 
