@@ -137,7 +137,7 @@ def expand(
         core_ent = res.entity
         seen_in_this_expansion: Set[str] = {core_ent.id}
 
-        # 1. PARENT EXPANSION
+        # 1. PARENT EXPANSION (CONTAINS)
         parent_entity: EntityModel | None = None
         parent_was_retrieved = False
 
@@ -145,10 +145,22 @@ def expand(
             if core_ent.parent_id in core_entity_ids:
                 parent_was_retrieved = True
             elif _should_expand_parent(core_ent, parent_counts):
-                parent_ent = fetch_entity(core_ent.parent_id)
-                if parent_ent:
-                    parent_entity = parent_ent
-                    seen_in_this_expansion.add(parent_ent.id)
+                # Verify that a real CONTAINS relationship exists in DB from parent_id -> core_ent.id
+                contains_rel = db_session.scalars(
+                    select(RelationshipModel).where(
+                        RelationshipModel.repo_id == repo_id,
+                        RelationshipModel.source_id == core_ent.parent_id,
+                        RelationshipModel.target_id == core_ent.id,
+                        RelationshipModel.type == "CONTAINS",
+                    )
+                ).first()
+
+                if contains_rel:
+                    parent_ent = fetch_entity(core_ent.parent_id)
+                    if parent_ent:
+                        parent_entity = parent_ent
+                        seen_in_this_expansion.add(parent_ent.id)
+
 
         # 2. OUTGOING CALLS (BFS up to calls_outgoing_depth)
         called_entities: List[CalledEntity] = []
