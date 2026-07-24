@@ -56,7 +56,7 @@ def main() -> None:
         help="Database connection URL",
     )
     query_parser.add_argument(
-        "--top-k", type=int, default=10, help="Top-K vector search results"
+        "--top-k", type=int, default=20, help="Top-K vector search results"
     )
 
     # ── ask subcommand ──────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ def main() -> None:
         help="Database connection URL",
     )
     ask_parser.add_argument(
-        "--top-k", type=int, default=10, help="Top-K vector search results"
+        "--top-k", type=int, default=20, help="Top-K vector search results"
     )
     ask_parser.add_argument(
         "--gemini-key",

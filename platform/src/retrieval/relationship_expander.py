@@ -237,6 +237,36 @@ def expand(
                         inheritance_entities.append(target_ent)
                         inh_queue.append((target_id, curr_depth + 1))
 
+        # 5. CONTAINS CHILD EXPANSION (for graph-isolated module entities)
+        contains_children: List[EntityModel] = []
+        if core_ent.type == "module":
+            # Check if module is graph-isolated (zero incoming/outgoing CALLS/IMPORTS at module level)
+            mod_rels = _get_relationships(
+                repo_id=repo_id,
+                source_ids=[core_ent.id],
+                types=["CALLS", "IMPORTS"],
+                db_session=db_session,
+            ) + _get_relationships(
+                repo_id=repo_id,
+                target_ids=[core_ent.id],
+                types=["CALLS", "IMPORTS"],
+                db_session=db_session,
+            )
+            if not mod_rels:
+                child_rels = _get_relationships(
+                    repo_id=repo_id,
+                    source_ids=[core_ent.id],
+                    types=["CONTAINS"],
+                    db_session=db_session,
+                )
+                for rel in child_rels:
+                    child_id = rel.target_id
+                    if child_id and child_id not in seen_in_this_expansion:
+                        child_ent = fetch_entity(child_id)
+                        if child_ent:
+                            seen_in_this_expansion.add(child_id)
+                            contains_children.append(child_ent)
+
         expanded_contexts.append(
             ExpandedContext(
                 core=res,
@@ -245,6 +275,7 @@ def expand(
                 called_entities=called_entities,
                 caller_entities=caller_entities,
                 inheritance_entities=inheritance_entities,
+                contains_children=contains_children,
             )
         )
 

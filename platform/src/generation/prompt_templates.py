@@ -279,6 +279,22 @@ def render_context_for_prompt(final_context: "FinalContext") -> str:
         else:
             block_lines.append("  [INHERITANCE] None (Graph-verified: 0 INHERITS/IMPLEMENTS relationships)")
 
+        # [CONTAINS CHILDREN — for isolated modules]
+        if getattr(exp, "contains_children", None):
+            for child in exp.contains_children:
+                if child.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            child,
+                            label=f"CONTAINS CHILD (isolated function of {core_entity.name})",
+                        )
+                    )
+                    block_lines.append(
+                        f"  [GRAPH-VERIFIED ISOLATION] Entity '{child.name}' has 0 dependencies "
+                        f"(zero incoming/outgoing calls and zero inheritance)."
+                    )
+                    rendered_entity_ids.add(child.id)
+
         if not has_any_relationship:
             block_lines.append(
                 f"  [GRAPH-VERIFIED ISOLATION] Entity '{core_entity.name}' has 0 dependencies "

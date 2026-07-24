@@ -93,6 +93,7 @@ class ExpandedContext:
     called_entities: list[CalledEntity] = field(default_factory=list)
     caller_entities: list["EntityModel"] = field(default_factory=list)
     inheritance_entities: list["EntityModel"] = field(default_factory=list)
+    contains_children: list["EntityModel"] = field(default_factory=list)
 
 
 @dataclass

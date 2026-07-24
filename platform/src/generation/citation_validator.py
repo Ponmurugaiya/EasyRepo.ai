@@ -540,5 +540,7 @@ def collect_context_entities(final_context) -> "list[EntityModel]":
             _add(caller)
         for inh in exp.inheritance_entities:
             _add(inh)
+        for child in getattr(exp, "contains_children", []):
+            _add(child)
 
     return entities

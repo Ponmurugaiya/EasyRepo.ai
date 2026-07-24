@@ -132,6 +132,9 @@ def build_context(
         for inh in exp.inheritance_entities:
             priority_items.append((6, inh, f"Inherited/Implemented by {core.name}"))
 
+        for child in exp.contains_children:
+            priority_items.append((2, child, f"Contained in isolated module {core.name}"))
+
     # Sort by priority rank
     priority_items.sort(key=lambda x: x[0])
 
