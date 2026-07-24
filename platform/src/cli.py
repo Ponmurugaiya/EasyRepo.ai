@@ -240,9 +240,14 @@ def main() -> None:
                 print(f"ERROR: {e}", file=sys.stderr)
                 sys.exit(1)
 
-            # Step 6 — Citation validation
+            # Step 6 — Citation validation (3-way classification)
             context_entities = collect_context_entities(final_context)
-            report = validate_citations(answer, context_entities)
+            report = validate_citations(
+                answer=answer,
+                context_entities=context_entities,
+                final_context=final_context,
+                db_session=session,
+            )
 
             # ── Output ──────────────────────────────────────────────────────
             print("=" * 70)

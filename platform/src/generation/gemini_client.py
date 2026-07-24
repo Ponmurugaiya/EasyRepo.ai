@@ -143,7 +143,7 @@ def generate_answer(
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     temperature=0.2,   # low temperature for factual/grounded answers
-                    max_output_tokens=4096,
+                    max_output_tokens=8192,
                 ),
             )
             # Extract text from the first candidate

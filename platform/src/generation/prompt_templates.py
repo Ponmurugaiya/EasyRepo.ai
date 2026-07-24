@@ -66,6 +66,21 @@ AND UserModel.validate), you MUST address each one SEPARATELY and clearly
 identify which entity you are discussing at every point. Never conflate two
 distinct entities with the same name.
 
+# Graph-verified isolation rule & evidence primacy
+When answering questions about code dependencies, isolation, or relationships:
+1. The `[GRAPH-VERIFIED ISOLATION]` tags are your **PRIMARY and authoritative EVIDENCE**.
+   They are derived directly from static AST parsing and verified call graphs — not from
+   documentation prose, which can drift out of sync with the actual code.
+2. For each isolated entity, you MUST:
+   a. Name the entity explicitly (e.g. `format_user_record`, `format_audit_log`).
+   b. Cite the entity's OWN `[file_path:start_line-end_line]` tag as the primary citation.
+      This is the CORE ENTITY citation shown in the context block for that entity.
+   c. State its isolation as a direct, specific fact: "has zero outgoing calls and zero incoming calls."
+3. Do NOT use documentation file citations (e.g. `[README.md:...]`, `[docs/ARCHITECTURE.md:...]`)
+   as the primary evidence for isolation facts. You MAY mention them parenthetically as
+   corroborating context ONLY AFTER citing the entity's own code citation.
+4. Do NOT hedge or use generalizations like "some functions/methods" or "it appears".
+
 # Response format
 - Use Markdown headings to structure your answer.
 - Cite inline: "The login method [python/services/auth_service.py:12-35] calls…"
@@ -192,63 +207,83 @@ def render_context_for_prompt(final_context: "FinalContext") -> str:
         depth2 = [c for c in exp.called_entities if c.depth == 2]
         depth3 = [c for c in exp.called_entities if c.depth == 3]
 
-        for called in depth1:
-            if called.entity.id not in rendered_entity_ids:
-                block_lines.append(
-                    _render_entity_block(
-                        called.entity,
-                        label=f"CALL CHAIN depth=1 (called by {core_entity.name})",
-                    )
-                )
-                rendered_entity_ids.add(called.entity.id)
+        has_any_relationship = False
 
-        for called in depth2:
-            if called.entity.id not in rendered_entity_ids:
-                block_lines.append(
-                    _render_entity_block(
-                        called.entity,
-                        label=(
-                            f"CALL CHAIN depth=2 "
-                            f"(called via {called.called_via.split('.')[-1]})"
-                        ),
+        if depth1 or depth2 or depth3:
+            has_any_relationship = True
+            for called in depth1:
+                if called.entity.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            called.entity,
+                            label=f"CALL CHAIN depth=1 (called by {core_entity.name})",
+                        )
                     )
-                )
-                rendered_entity_ids.add(called.entity.id)
+                    rendered_entity_ids.add(called.entity.id)
 
-        for called in depth3:
-            if called.entity.id not in rendered_entity_ids:
-                block_lines.append(
-                    _render_entity_block(
-                        called.entity,
-                        label=(
-                            f"CALL CHAIN depth=3 "
-                            f"(called via {called.called_via.split('.')[-1]})"
-                        ),
+            for called in depth2:
+                if called.entity.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            called.entity,
+                            label=(
+                                f"CALL CHAIN depth=2 "
+                                f"(called via {called.called_via.split('.')[-1]})"
+                            ),
+                        )
                     )
-                )
-                rendered_entity_ids.add(called.entity.id)
+                    rendered_entity_ids.add(called.entity.id)
+
+            for called in depth3:
+                if called.entity.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            called.entity,
+                            label=(
+                                f"CALL CHAIN depth=3 "
+                                f"(called via {called.called_via.split('.')[-1]})"
+                            ),
+                        )
+                    )
+                    rendered_entity_ids.add(called.entity.id)
+        else:
+            block_lines.append("  [CALL CHAIN] None (Graph-verified: 0 outgoing CALLS relationships)")
 
         # [CALLERS — incoming]
-        for caller in exp.caller_entities:
-            if caller.id not in rendered_entity_ids:
-                block_lines.append(
-                    _render_entity_block(
-                        caller,
-                        label=f"CALLER (calls {core_entity.name})",
+        if exp.caller_entities:
+            has_any_relationship = True
+            for caller in exp.caller_entities:
+                if caller.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            caller,
+                            label=f"CALLER (calls {core_entity.name})",
+                        )
                     )
-                )
-                rendered_entity_ids.add(caller.id)
+                    rendered_entity_ids.add(caller.id)
+        else:
+            block_lines.append("  [CALLERS]    None (Graph-verified: 0 incoming CALLS relationships)")
 
         # [INHERITANCE]
-        for inh in exp.inheritance_entities:
-            if inh.id not in rendered_entity_ids:
-                block_lines.append(
-                    _render_entity_block(
-                        inh,
-                        label=f"INHERITANCE (base of {core_entity.name})",
+        if exp.inheritance_entities:
+            has_any_relationship = True
+            for inh in exp.inheritance_entities:
+                if inh.id not in rendered_entity_ids:
+                    block_lines.append(
+                        _render_entity_block(
+                            inh,
+                            label=f"INHERITANCE (base of {core_entity.name})",
+                        )
                     )
-                )
-                rendered_entity_ids.add(inh.id)
+                    rendered_entity_ids.add(inh.id)
+        else:
+            block_lines.append("  [INHERITANCE] None (Graph-verified: 0 INHERITS/IMPLEMENTS relationships)")
+
+        if not has_any_relationship:
+            block_lines.append(
+                f"  [GRAPH-VERIFIED ISOLATION] Entity '{core_entity.name}' has 0 dependencies "
+                f"(zero incoming/outgoing calls and zero inheritance)."
+            )
 
         sections.append("\n".join(block_lines))
 
