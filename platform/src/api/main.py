@@ -21,7 +21,7 @@ from src.api.routers import ask as ask_router
 from src.api.routers import auth as auth_router
 from src.api.routers import repositories as repositories_router
 from src.api.routers import retrieval as retrieval_router
-from src.jobs.queue import task_queue
+from src.jobs.queue import open_task_queue, task_queue
 from src.storage.db import get_engine, init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -157,7 +157,7 @@ async def lifespan(app: FastAPI):
     # To scale workers independently, run the procrastinate CLI separately
     # and remove run_worker_async from here.
     # ------------------------------------------------------------------
-    async with task_queue.open_async():
+    async with open_task_queue(db_url):
         await task_queue.schema_manager.apply_schema_async()
         logger.info("Procrastinate schema ready")
 

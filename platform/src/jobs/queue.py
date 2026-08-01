@@ -2,10 +2,9 @@
 
 Architecture
 ------------
-- One ``procrastinate.App`` instance (``task_queue``) is shared across the
-  whole application.  It is created here with a deferred connector so that
-  the actual database URL is injected at startup time from the environment,
-  not hard-coded at import time.
+- ``task_queue`` is a module-level placeholder ``procrastinate.App``.  It is
+  NOT opened here.  The actual connector (with the resolved DATABASE_URL) is
+  created and opened inside the FastAPI lifespan via ``open_task_queue()``.
 
 - ``ingest_repo_task`` is the single task registered with the queue.  It is
   a *synchronous* function because ``ingest_repository`` (the core pipeline)
@@ -13,10 +12,20 @@ Architecture
   the async event loop is never blocked.
 
 - The FastAPI lifespan (``main.py``) is responsible for:
-    1. Opening the connector (``task_queue.open_async()``).
+    1. Calling ``open_task_queue(db_url)`` which builds a fresh
+       ``PsycopgConnector`` with the correct DSN (including SSL for remote
+       hosts) and enters ``task_queue.open_async()``.
     2. Applying the procrastinate schema once (idempotent DDL).
     3. Launching the in-process worker as an asyncio background task.
     4. Cancelling the worker on shutdown.
+
+Supabase / remote Postgres
+--------------------------
+``PsycopgConnector`` passes all constructor kwargs directly to
+``psycopg_pool.AsyncConnectionPool``.  The first positional kwarg of
+``AsyncConnectionPool`` is ``conninfo`` — the psycopg v3 connection string.
+``make_psycopg_dsn()`` strips any SQLAlchemy driver suffix and adds
+``sslmode=require`` for non-localhost hosts.
 
 Worker note
 -----------
@@ -32,21 +41,54 @@ and remove ``run_worker_async`` from the lifespan.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 import procrastinate
 
-from src.storage.db import get_session
+from src.storage.db import get_session, make_psycopg_dsn
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Application object
-# Connector is intentionally left un-opened here; ``main.py`` opens it inside
-# the lifespan with the resolved DATABASE_URL.
+# Application object — connector replaced at startup by open_task_queue().
 # ---------------------------------------------------------------------------
 task_queue = procrastinate.App(
     connector=procrastinate.PsycopgConnector(),
 )
+
+
+@asynccontextmanager
+async def open_task_queue(db_url: str):
+    """Async context manager that opens the Procrastinate connector.
+
+    Builds a new ``PsycopgConnector`` with the correct ``conninfo`` DSN
+    derived from *db_url* (SSL added for remote hosts), swaps it into
+    ``task_queue``, and opens the pool.
+
+    Usage in FastAPI lifespan::
+
+        async with open_task_queue(db_url):
+            await task_queue.schema_manager.apply_schema_async()
+            worker = asyncio.create_task(task_queue.run_worker_async(...))
+            yield
+            worker.cancel()
+
+    Args:
+        db_url: SQLAlchemy-style ``DATABASE_URL`` (read from environment).
+    """
+    dsn = make_psycopg_dsn(db_url)
+    logger.info(
+        "Procrastinate: opening connector (remote=%s)",
+        "localhost" not in dsn and "127.0.0.1" not in dsn,
+    )
+
+    # Replace the placeholder connector with one that has the real conninfo.
+    # PsycopgConnector forwards **kwargs to AsyncConnectionPool, whose first
+    # kwarg is `conninfo`.
+    task_queue.connector = procrastinate.PsycopgConnector(conninfo=dsn)
+
+    async with task_queue.open_async():
+        yield
 
 
 # ---------------------------------------------------------------------------
