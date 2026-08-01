@@ -131,12 +131,23 @@ async def create_repository(
 
     db.commit()
 
-    await ingest_repo_task.defer_async(
-        repo_path_or_url=body.source,
-        db_url=db_url,
-        repo_id=repo.id,
-        repo_name=repo.name,
-    )
+    try:
+        await ingest_repo_task.defer_async(
+            repo_path_or_url=body.source,
+            db_url=db_url,
+            repo_id=repo.id,
+            repo_name=repo.name,
+        )
+    except Exception as exc:
+        # AppNotOpen can happen during hot-reload when the connector hasn't
+        # finished initialising yet.  The repo row is already committed with
+        # status="pending" so the worker will pick it up on the next cycle.
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "Could not defer ingestion job for %s (%s). "
+            "Worker will retry on next poll.",
+            repo.id, exc,
+        )
 
     return RepositoryResponse(
         repo_id=repo.id,

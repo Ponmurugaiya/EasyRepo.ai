@@ -98,8 +98,6 @@ def _configure_limiter_storage() -> str:
         client.ping()
         client.close()
 
-        # Re-create the limiter with Redis storage.  slowapi reads the URI
-        # string directly when passed to storage_uri.
         _limiter._storage = RedisStorage(redis_url)  # type: ignore[attr-defined]
         return f"Redis ({redis_url})"
     except Exception as exc:
@@ -158,8 +156,19 @@ async def lifespan(app: FastAPI):
     # and remove run_worker_async from here.
     # ------------------------------------------------------------------
     async with open_task_queue(db_url):
-        await task_queue.schema_manager.apply_schema_async()
-        logger.info("Procrastinate schema ready")
+        try:
+            await task_queue.schema_manager.apply_schema_async()
+            logger.info("Procrastinate schema ready")
+        except Exception as e:
+            # Procrastinate wraps psycopg errors in ConnectorException.
+            # "already exists" means the schema was created on a previous run
+            # — safe to continue.  Any other error is re-raised.
+            err_str = str(e).lower()
+            cause_str = str(e.__cause__).lower() if e.__cause__ else ""
+            if "already exists" in err_str or "already exists" in cause_str:
+                logger.info("Procrastinate schema already present, skipping DDL.")
+            else:
+                raise
 
         worker_task = asyncio.create_task(
             task_queue.run_worker_async(

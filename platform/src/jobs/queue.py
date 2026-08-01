@@ -40,7 +40,9 @@ and remove ``run_worker_async`` from the lifespan.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 import procrastinate
@@ -59,6 +61,12 @@ task_queue = procrastinate.App(
 
 @asynccontextmanager
 async def open_task_queue(db_url: str):
+    """Async context manager that opens the Procrastinate connector."""
+    # psycopg v3 async requires SelectorEventLoop on Windows.
+    # Set it here so the connector's connection pool uses the right loop
+    # regardless of how the server was started.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     """Async context manager that opens the Procrastinate connector.
 
     Builds a new ``PsycopgConnector`` with the correct ``conninfo`` DSN

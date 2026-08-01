@@ -56,7 +56,9 @@ def search(
         raise ValueError("db_session is required for vector search.")
 
     emb_service = embedder or get_embedder()
-    query_vector = emb_service.embed(query)
+    # Use input_type="query" for search queries — Voyage optimises differently
+    # for queries vs indexed documents, improving retrieval accuracy.
+    query_vector = emb_service.embed_query(query)
 
     # Cosine distance in pgvector is calculated with `<=>`.
     # Similarity score = 1 - cosine_distance.
