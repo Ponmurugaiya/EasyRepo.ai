@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-background: oklch(3.9% 0 0);
+  --color-foreground: oklch(98% 0 0);
+  --color-card: oklch(3.9% 0 0);
+  --color-card-foreground: oklch(98% 0 0);
+  --color-popover: oklch(3.9% 0 0);
+  --color-popover-foreground: oklch(98% 0 0);
+  --color-primary: oklch(98% 0 0);
+  --color-primary-foreground: oklch(9% 0 0);
+  --color-secondary: oklch(14.9% 0 0);
+  --color-secondary-foreground: oklch(98% 0 0);
+  --color-muted: oklch(14.9% 0 0);
+  --color-muted-foreground: oklch(63.9% 0 0);
+  --color-accent: oklch(14.9% 0 0);
+  --color-accent-foreground: oklch(98% 0 0);
+  --color-destructive: oklch(30.6% 0.15 25);
+  --color-destructive-foreground: oklch(98% 0 0);
+  --color-border: oklch(14.9% 0 0);
+  --color-input: oklch(14.9% 0 0);
+  --color-ring: oklch(83.1% 0 0);
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+  html,
+  body,
+  #__next {
+    height: 100%;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}

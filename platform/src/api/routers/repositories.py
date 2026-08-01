@@ -131,6 +131,13 @@ async def create_repository(
 
     db.commit()
 
+    # Defer the ingestion job to the Procrastinate worker.
+    # If the connector isn't open yet (e.g. first request on startup), fall
+    # back to running the ingestion directly in a thread pool so the job
+    # always executes regardless of worker state.
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    deferred = False
     try:
         await ingest_repo_task.defer_async(
             repo_path_or_url=body.source,
@@ -138,16 +145,37 @@ async def create_repository(
             repo_id=repo.id,
             repo_name=repo.name,
         )
+        deferred = True
+        _log.info("Deferred ingestion job for %s via Procrastinate", repo.id)
     except Exception as exc:
-        # AppNotOpen can happen during hot-reload when the connector hasn't
-        # finished initialising yet.  The repo row is already committed with
-        # status="pending" so the worker will pick it up on the next cycle.
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            "Could not defer ingestion job for %s (%s). "
-            "Worker will retry on next poll.",
+        _log.warning(
+            "Procrastinate defer failed for %s (%s) — running in thread fallback.",
             repo.id, exc,
         )
+
+    if not deferred:
+        # Fallback: run directly in asyncio thread pool so the API returns
+        # immediately and ingestion runs concurrently.
+        import asyncio
+        from src.ingestion.pipeline import ingest_repository
+        from src.storage.db import get_session
+
+        _source = body.source
+        _db_url = db_url
+        _repo_id = repo.id
+        _repo_name = repo.name
+
+        def _run() -> None:
+            with get_session(_db_url) as session:
+                ingest_repository(
+                    repo_path_or_url=_source,
+                    db_session=session,
+                    repo_id=_repo_id,
+                    repo_name=_repo_name,
+                )
+
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _run)
 
     return RepositoryResponse(
         repo_id=repo.id,

@@ -50,6 +50,12 @@ class RepositoryModel(Base):
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default="pending"
     )
+    # Human-readable progress message updated at each pipeline stage.
+    # Exposed via GET /repositories/{id}/status so the frontend can show
+    # live progress during ingestion.
+    progress_message: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default=None
+    )
 
     __table_args__ = (
         CheckConstraint(

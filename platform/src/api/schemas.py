@@ -58,6 +58,7 @@ class RepositoryStatusResponse(BaseModel):
     name: str
     status: str
     indexed_at: Optional[str] = None
+    progress_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
