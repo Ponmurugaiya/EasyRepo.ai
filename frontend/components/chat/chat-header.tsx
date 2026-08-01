@@ -1,11 +1,10 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RotateCcw, PanelLeft, ExternalLink, FileSearch, Zap } from "lucide-react";
 import { useChatStore } from "@/store/chat-store";
-import { truncate } from "@/lib/utils";
+import { truncate, cn } from "@/lib/utils";
 import type { RepoSession } from "@/types/chat";
 
 interface ChatHeaderProps {
@@ -13,25 +12,34 @@ interface ChatHeaderProps {
   onClear: () => void;
 }
 
+// Reusable icon button style — avoids nesting <button> inside TooltipTrigger
+const iconBtn = cn(
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+  "text-zinc-400 hover:text-white hover:bg-white/5 transition-colors",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+);
+
 export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
   const { sidebarOpen, setSidebarOpen } = useChatStore();
   const isGitHub = /github\.com/i.test(repo.repoUrl);
 
   return (
     <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 bg-zinc-950/60 backdrop-blur">
-      {/* Sidebar toggle (shown when sidebar is closed) */}
+
+      {/* Sidebar toggle — TooltipTrigger renders as the button directly */}
       {!sidebarOpen && (
         <Tooltip>
-          <TooltipTrigger>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-zinc-400 hover:text-white shrink-0"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <button
+                className={iconBtn}
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open sidebar"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
+            }
+          />
           <TooltipContent>Open sidebar</TooltipContent>
         </Tooltip>
       )}
@@ -62,34 +70,40 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
+
+        {/* GitHub link — TooltipTrigger renders as the anchor directly */}
         {isGitHub && (
           <Tooltip>
-            <TooltipTrigger>
-              <a
-                href={repo.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
-                aria-label="View on GitHub"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <a
+                  href={repo.repoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={iconBtn}
+                  aria-label="View on GitHub"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              }
+            />
             <TooltipContent>View on GitHub</TooltipContent>
           </Tooltip>
         )}
 
+        {/* Clear conversation — TooltipTrigger renders as the button directly */}
         <Tooltip>
-          <TooltipTrigger>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-zinc-400 hover:text-white"
-              onClick={onClear}
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <button
+                className={iconBtn}
+                onClick={onClear}
+                aria-label="Clear conversation"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            }
+          />
           <TooltipContent>Clear conversation</TooltipContent>
         </Tooltip>
       </div>
