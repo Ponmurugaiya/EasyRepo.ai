@@ -21,6 +21,6 @@ class Entity(BaseModel):
 class Relationship(BaseModel):
     source_id: str
     target_id: str
-    type: Literal["CONTAINS", "CALLS", "IMPORTS", "INHERITS", "IMPLEMENTS"]
+    type: Literal["CONTAINS", "CALLS", "IMPORTS", "INHERITS", "IMPLEMENTS", "INSTANTIATES"]
     file_path: str
     line: int

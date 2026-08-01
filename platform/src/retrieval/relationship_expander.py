@@ -3,8 +3,8 @@
 Implements expansion rules:
 1. PARENT EXPANSION (CONTAINS, upward): Pull parent class/module if 2+ retrieved
    entities share it OR if entity is a method with self references needing class context.
-2. EXECUTION PATH RECONSTRUCTION (CALLS, both directions, bounded depth):
-   Walk outgoing CALLS edges up to max depth (default 2), incoming CALLS up to max depth 1.
+2. EXECUTION PATH RECONSTRUCTION (CALLS + INSTANTIATES, both directions, bounded depth):
+   Walk outgoing CALLS/INSTANTIATES edges up to max depth (default 2), incoming CALLS up to max depth 1.
 3. INHERITANCE CONTEXT: Walk INHERITS/IMPLEMENTS edges (depth 2 to support multi-level inheritance).
 4. DEDUPLICATION: Avoid duplicating entities across core retrieval and expansion sets.
 """
@@ -163,6 +163,8 @@ def expand(
 
 
         # 2. OUTGOING CALLS (BFS up to calls_outgoing_depth)
+        # Also traverses INSTANTIATES edges so that classes being constructed
+        # are pulled into context alongside called functions.
         called_entities: List[CalledEntity] = []
         # Queue item: (entity_id, current_depth, called_via)
         queue: List[Tuple[str, int, str]] = [(core_ent.id, 0, core_ent.id)]
@@ -175,7 +177,7 @@ def expand(
             rels = _get_relationships(
                 repo_id=repo_id,
                 source_ids=[curr_id],
-                types=["CALLS"],
+                types=["CALLS", "INSTANTIATES"],
                 db_session=db_session,
             )
 

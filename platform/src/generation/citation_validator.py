@@ -7,19 +7,12 @@ After the model returns an answer, this module:
        OR the range falls within a container (file/class) AND the named symbol is a
        CONTAINS child declared at those lines in the DB,
        OR the named symbol has a non-CALLS relationship (IMPORTS, INHERITS, IMPLEMENTS,
-       CONTAINS) to the matched entity — backing the claim without requiring a CALLS edge.
+       CONTAINS, INSTANTIATES) to the matched entity — backing the claim without
+       requiring a CALLS edge.
      - Category (b) CALL-SITE: Line is inside caller body, text describes invocation,
        and a real CALLS edge exists in the DB graph.
      - Category (c) UNSUPPORTED: File/line not in context, or names an entity for which
        NO relationship of any type exists in the graph. True hallucinations only.
-
-Known Limitation / Future Work:
--------------------------------
-Object instantiation citations (e.g. "UserModel created at line 37") are currently
-classified as Category (c) UNSUPPORTED because the graph schema models CONTAINS,
-CALLS, IMPORTS, INHERITS, and IMPLEMENTS edge types, but does not yet model an
-explicit INSTANTIATES relationship type. This is expected behavior under the current
-schema and is planned for future relationship type expansion.
 """
 
 from __future__ import annotations
@@ -209,7 +202,7 @@ def _collect_graph_relationships(final_context=None, db_session=None) -> dict[st
     """Build sets of valid (source_id, target_id) edges grouped by relationship type.
 
     Returns a dict keyed by relationship type string (e.g. "CALLS", "IMPORTS",
-    "CONTAINS", "INHERITS", "IMPLEMENTS") where each value is a set of
+    "CONTAINS", "INHERITS", "IMPLEMENTS", "INSTANTIATES") where each value is a set of
     (source_id_or_name, target_id_or_name) pairs.
     """
     rel_map: dict[str, set[tuple[str, str]]] = {}
@@ -525,7 +518,7 @@ def validate_citations(
         matched_lookup = _entity_ids_to_check(matched, db_session)
 
         backing_rel: str | None = None
-        for rel_type in ("IMPORTS", "INHERITS", "IMPLEMENTS", "CONTAINS"):
+        for rel_type in ("IMPORTS", "INHERITS", "IMPLEMENTS", "CONTAINS", "INSTANTIATES"):
             rel_set = graph_rels.get(rel_type, set())
             callee_ids = [callee_ent.id, callee_ent.name] + [c.id for c in callee_candidates] + [c.name for c in callee_candidates]
             if any(

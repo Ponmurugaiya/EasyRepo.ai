@@ -97,24 +97,30 @@ as a separate process and remove `run_worker_async` from the lifespan.
 
 ## 3. INSTANTIATES is not a modeled relationship type
 
-**Status:** Open — documented, deliberate scope boundary (see Step 7)
+**Status:** Closed (2026-08-01)
 
-**What happens today:** The platform models five relationship types:
-CONTAINS, CALLS, IMPORTS, INHERITS, IMPLEMENTS. Object construction
-(`UserModel(...)`) is not tracked as its own relationship, so citations
-describing "X creates an instance of Y" are correctly classified as
-`unsupported` by the citation validator — this is honest behavior given the
-current schema, not a bug.
+**What was implemented:** Extended the relationship taxonomy to include
+INSTANTIATES — a distinct edge type meaning "this function/method/module
+creates an instance of that class", separate from CALLS (which tracks
+function-to-function invocations).
 
-**Why it matters:** "What creates instances of this class?" is a legitimate,
-useful codebase question that the platform currently can't answer
-structurally.
-
-**To close this item:** Extend the relationship taxonomy to include
-INSTANTIATES, updating the resolver (Step 4), the relationship expander
-(Step 6), and the citation validator (Step 7) together — this is real,
-deliberate scope, not a quick patch, and should be treated as its own
-mini-project.
+**Files changed:**
+- `src/extraction/models.py` — Added `"INSTANTIATES"` to the `Relationship.type`
+  literal (type-safety; no schema migration needed since `relationships.type` is
+  an unconstrained `VARCHAR(50)`).
+- `src/resolution/instantiates_resolver.py` — New resolver. Scans function /
+  method / module source for `ClassName(...)` (Python) and `new ClassName(...)`
+  (TypeScript) patterns, resolves each `ClassName` to an in-repo class entity
+  via the symbol table, and emits `INSTANTIATES` edges. Module-level bodies are
+  stripped of child-entity lines before scanning to avoid double-attribution.
+- `src/resolution/__init__.py` — Wired in as step 5 of `resolve_relationships()`.
+- `src/retrieval/relationship_expander.py` — Outgoing BFS traversal now includes
+  `"INSTANTIATES"` alongside `"CALLS"` so that classes being constructed appear
+  in retrieval context.
+- `src/generation/citation_validator.py` — Added `"INSTANTIATES"` to the
+  backing-relationship check; citations backed by an instantiation edge are now
+  classified as Category (a) DEFINITION rather than unsupported. Removed the
+  "Known Limitation" docstring note.
 
 ---
 

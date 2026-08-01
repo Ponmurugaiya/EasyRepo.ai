@@ -13,6 +13,8 @@ IN SCOPE (will be resolved):
   - Interface/ABC implementation (``implements I``, ``class A(ABC)`` where A
     has abstractmethod parents) where I is in-repo.
   - Module-level calls attributed to the module entity (e.g. ``if __name__ == ...``).
+  - Object construction (``ClassName(...)`` / ``new ClassName(...)``) where the
+    class is in-repo — emitted as INSTANTIATES edges.
 
 OUT OF SCOPE (will be silently skipped, never guessed):
   - Dynamic dispatch, reflection, calls through untyped variables or callbacks
@@ -62,12 +64,13 @@ def resolve_relationships(
 
     Returns:
         A flat list of ``Relationship`` objects covering IMPORTS, CALLS,
-        INHERITS, and IMPLEMENTS edges.
+        INHERITS, IMPLEMENTS, and INSTANTIATES edges.
     """
     from src.resolution.import_resolver import build_symbol_tables
     from src.resolution.call_resolver import resolve_calls
     from src.resolution.inheritance_resolver import resolve_inheritance
     from src.resolution.implements_resolver import resolve_implements
+    from src.resolution.instantiates_resolver import resolve_instantiates
 
     repo_dir = Path(repo_root).resolve()
 
@@ -89,7 +92,12 @@ def resolve_relationships(
         entities, symbol_tables, repo_dir, adapter_registry, implements_handoff
     )
 
-    return import_rels + call_rels + inherits_rels + implements_rels
+    # 5. Resolve object construction sites -> INSTANTIATES edges
+    instantiates_rels = resolve_instantiates(
+        entities, symbol_tables, repo_dir, adapter_registry
+    )
+
+    return import_rels + call_rels + inherits_rels + implements_rels + instantiates_rels
 
 
 __all__ = ["resolve_relationships"]
