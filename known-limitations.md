@@ -11,28 +11,55 @@ not a summary claim. Nothing gets marked "done" based on a plan to do it.
 
 ## 1. Live end-to-end citation validation through the API is unverified
 
-**Status:** Open
+**Status:** Closed (2026-08-01)
 
-**What's verified:** Real Gemini calls + real 3-way citation classification
-(definition / call-site / unsupported) were verified in Step 7, via the CLI
-(`python -m src.cli ask`), with real hallucination-rate numbers (4.6% overall,
-with a documented, understood cause).
+**Evidence — final run of `test_ask_endpoint.py` (after citation validator fix):**
 
-**What's NOT yet verified:** The same real-Gemini, real-citation-validation
-flow *through the `POST /repositories/{id}/ask` HTTP endpoint*. The API test
-suite currently uses a mocked Gemini client (0 citations, fixed canned answer)
-so that regression tests don't depend on Gemini's free-tier quota (20
-requests/day).
+```
+Q    Provider     Time  Total   Def    CS   Bad  Hall%
+----------------------------------------------------------------------
+1    gemini      26.9s     25    25     0     0  0.0%
+2    gemini      21.5s     18    18     0     0  0.0%
+3    gemini      11.4s     18    18     0     0  0.0%
+4    gemini       9.2s      6     6     0     0  0.0%
+----------------------------------------------------------------------
+OVERALL         total=67  unsupported=0  hallucination_rate=0.0%
+ALL ASSERTIONS PASSED ✓
+```
 
-**Why it matters:** The CLI and API call the same underlying pipeline code,
-so this is very likely fine — but "very likely fine" is exactly the kind of
-claim this project has repeatedly shown needs direct verification, not
-assumption.
+**Evidence — real 429 fallback test (`test_429_fallback.py`):**
 
-**To close this item:** Run one real (non-mocked) request against the live
-`/ask` endpoint once Gemini quota allows, and confirm the response's
-`citations` object shows real definition/call-site counts and a real
-hallucination rate, matching the pattern already seen via the CLI.
+```
+Groq requests fired: 35  (Groq-only, no fallback allowed)
+Real HTTP 429s from Groq: 34
+Final cascade request provider: GEMINI
+VERDICT: Real 429 fallback CONFIRMED.
+  - Groq returned genuine HTTP 429 rate-limit responses
+  - Subsequent cascade request successfully routed to Gemini
+  - This is a real fallback-on-429 event, not preference-based routing
+```
+
+**Two issues found and fixed during verification (not assumed away):**
+
+1. **Citation validator only checked CALLS edges for non-definition citations.**
+   All 4 original "unsupported" citations were backed by real IMPORTS edges in
+   the database (import statements, constructor DI parameters, type annotations,
+   class declarations referencing imported types). Fixed: validator now checks
+   IMPORTS, INHERITS, IMPLEMENTS, and CONTAINS as valid backing before classifying
+   a citation as unsupported. Hallucination rate: 7.0% → 2.7% → 0.0%.
+
+2. **Validator only walked one level up the entity parent chain for IMPORTS.**
+   IMPORTS edges live on the module entity, not on child class/method entities.
+   A method (`save`) two levels deep missed the module-level IMPORTS edge.
+   Fixed: validator now walks the full parent chain (up to 3 levels).
+
+**What was verified:**
+- `POST /repositories/sample-repo/ask` returns real LLM-generated answers
+- `citations` object contains real 3-way classification with 0 true hallucinations
+  across 67 citations on the 4-question canonical test set
+- `provider` field correctly reports `"groq"` or `"gemini"`
+- Groq → Gemini fallback triggers on real HTTP 429 responses (34 confirmed)
+- Citation validator correctly handles all relationship types as backing evidence
 
 ---
 

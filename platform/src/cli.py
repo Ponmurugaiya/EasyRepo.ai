@@ -62,7 +62,10 @@ def main() -> None:
     # ── ask subcommand ──────────────────────────────────────────────────────
     ask_parser = subparsers.add_parser(
         "ask",
-        help="Run full pipeline: retrieval → Gemini generation → citation validation",
+        help=(
+            "Run full pipeline: retrieval → LLM generation → citation validation. "
+            "Uses Groq (multi-model rotation) by default, falls back to Gemini."
+        ),
     )
     ask_parser.add_argument("repo_id", type=str, help="Repository ID")
     ask_parser.add_argument("question", type=str, help="Natural language question")
@@ -75,6 +78,23 @@ def main() -> None:
     ask_parser.add_argument(
         "--top-k", type=int, default=20, help="Top-K vector search results"
     )
+    # ── Groq options ──────────────────────────────────────────────────────
+    ask_parser.add_argument(
+        "--groq-key",
+        type=str,
+        default=None,
+        help="Groq API key (overrides GROQ_API_KEY env var)",
+    )
+    ask_parser.add_argument(
+        "--groq-model",
+        type=str,
+        default=None,
+        help=(
+            "Specific Groq model to use (e.g. llama-3.3-70b-versatile). "
+            "Omit to rotate through all Groq models automatically."
+        ),
+    )
+    # ── Gemini options (fallback / explicit) ──────────────────────────────
     ask_parser.add_argument(
         "--gemini-key",
         type=str,
@@ -84,8 +104,19 @@ def main() -> None:
     ask_parser.add_argument(
         "--model",
         type=str,
-        default="gemini-2.5-flash",
-        help="Gemini model identifier (default: gemini-2.5-flash)",
+        default=None,
+        help=(
+            "Force a specific model, bypassing the provider cascade. "
+            "Prefix with 'groq:' or 'gemini:' to be explicit, "
+            "e.g. --model gemini:gemini-2.5-flash"
+        ),
+    )
+    ask_parser.add_argument(
+        "--provider",
+        type=str,
+        choices=["groq", "gemini", "auto"],
+        default="auto",
+        help="LLM provider: 'auto' (default) tries Groq first, then Gemini.",
     )
     ask_parser.add_argument(
         "--token-budget",
@@ -175,23 +206,66 @@ def main() -> None:
         from src.retrieval import build_context, expand, search
         from src.storage.db import get_session
         from src.generation.prompt_templates import build_system_prompt, render_context_for_prompt
-        from src.generation.gemini_client import generate_answer, GeminiClientError
         from src.generation.citation_validator import validate_citations, collect_context_entities
+        from src.generation.llm_client import (
+            generate_answer_with_fallback,
+            LLMProviderError,
+            GROQ_MODEL_NAMES,
+        )
 
-        # Resolve API key: --gemini-key flag takes precedence over env var
+        # ── Resolve API keys ─────────────────────────────────────────────
+        if args.groq_key:
+            os.environ["GROQ_API_KEY"] = args.groq_key
         if args.gemini_key:
             os.environ["GEMINI_API_KEY"] = args.gemini_key
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
+        groq_key = os.environ.get("GROQ_API_KEY", "")
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+
+        # ── Parse provider / model flags ────────────────────────────────
+        force_groq_model: str | None = args.groq_model
+        force_gemini_model: str = "gemini-2.5-flash"
+        skip_groq = args.provider == "gemini"
+        skip_gemini = args.provider == "groq"
+
+        if args.model:
+            if args.model.startswith("groq:"):
+                force_groq_model = args.model[len("groq:"):]
+                skip_gemini = True
+            elif args.model.startswith("gemini:"):
+                force_gemini_model = args.model[len("gemini:"):]
+                skip_groq = True
+            elif args.model in GROQ_MODEL_NAMES:
+                force_groq_model = args.model
+            else:
+                force_gemini_model = args.model
+                skip_groq = True
+
+        if not groq_key:
+            skip_groq = True
+        if not gemini_key:
+            skip_gemini = True
+
+        if skip_groq and skip_gemini:
             print(
-                "ERROR: No Gemini API key found.\n"
-                "  Set the GEMINI_API_KEY environment variable or pass --gemini-key.",
+                "ERROR: No LLM API keys configured.\n"
+                "  Set GROQ_API_KEY and/or GEMINI_API_KEY, "
+                "or pass --groq-key / --gemini-key.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        print(f"\n[*] Running retrieval for repo '{args.repo_id}'...")
+        # ── Provider summary ─────────────────────────────────────────────
+        if not skip_groq:
+            groq_label = f"Groq ({force_groq_model or 'auto-rotate'})"
+            if not skip_gemini:
+                print(f"[*] Provider: {groq_label} → Gemini fallback ({force_gemini_model})")
+            else:
+                print(f"[*] Provider: {groq_label} (no Gemini fallback)")
+        else:
+            print(f"[*] Provider: Gemini ({force_gemini_model})")
+
+        print(f"[*] Running retrieval for repo '{args.repo_id}'...")
         with get_session(args.db_url) as session:
             # Step 1 — Vector search
             results = search(
@@ -226,17 +300,21 @@ def main() -> None:
             system_prompt = build_system_prompt()
             user_prompt = render_context_for_prompt(final_context)
 
-            # Step 5 — Generate answer via Gemini
-            print(f"[*] Calling Gemini ({args.model})...\n")
+            # Step 5 — Generate answer (Groq → Gemini cascade)
             try:
-                answer = generate_answer(
+                answer, provider_used = generate_answer_with_fallback(
                     query=args.question,
                     context=user_prompt,
                     system_prompt=system_prompt,
-                    model=args.model,
-                    api_key=api_key,
+                    groq_model=force_groq_model,
+                    groq_api_key=groq_key or None,
+                    gemini_model=force_gemini_model,
+                    gemini_api_key=gemini_key or None,
+                    skip_groq=skip_groq,
+                    skip_gemini=skip_gemini,
                 )
-            except GeminiClientError as e:
+                print(f"[*] Answer generated via {provider_used.upper()}.\n")
+            except LLMProviderError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 sys.exit(1)
 
