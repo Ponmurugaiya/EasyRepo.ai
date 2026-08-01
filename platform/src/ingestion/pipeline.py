@@ -14,6 +14,7 @@ from src.extraction.entity_extractor import EntityExtractor
 from src.languages import ADAPTER_REGISTRY
 from src.resolution import resolve_relationships
 from src.storage.models import EntityModel, RelationshipModel, RepositoryModel
+from src.storage.repo_id import canonical_source, derive_repo_id, repo_name_from_source
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,13 @@ def ingest_repository(
     """
     repo_path = Path(repo_path_or_url).resolve()
     if not repo_name:
-        repo_name = repo_path.name
+        repo_name = repo_name_from_source(repo_path_or_url)
     if not repo_id:
-        repo_id = repo_path.name.lower().replace(" ", "-")
+        repo_id = derive_repo_id(repo_path_or_url)
+
+    # Canonical URL for deduplication — stored on the row so the API router
+    # can look up existing repos by source without relying solely on repo_id.
+    canon = canonical_source(repo_path_or_url)
 
     # 1. Initialize or update repository row with status = "indexing"
     repo = db_session.query(RepositoryModel).filter_by(id=repo_id).first()
@@ -47,12 +52,14 @@ def ingest_repository(
         repo = RepositoryModel(
             id=repo_id,
             url_or_path=str(repo_path),
+            canonical_url=canon,
             name=repo_name,
             status="indexing",
         )
         db_session.add(repo)
     else:
         repo.url_or_path = str(repo_path)
+        repo.canonical_url = canon
         repo.name = repo_name
         repo.status = "indexing"
         # Clear previous entities and relationships if re-indexing

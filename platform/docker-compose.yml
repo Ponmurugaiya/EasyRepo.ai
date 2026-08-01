@@ -10,7 +10,6 @@ services:
       POSTGRES_DB: easyrepo
     ports:
       - "5435:5432"
-
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -19,5 +18,23 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    # Append-only persistence — survives container restarts.
+    # Rate-limit counters are short-lived so RDB snapshots alone are fine,
+    # but AOF adds negligible overhead and avoids a counter reset on restart.
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
+  redisdata:

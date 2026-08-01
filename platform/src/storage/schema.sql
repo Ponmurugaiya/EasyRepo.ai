@@ -12,6 +12,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS repositories (
     id VARCHAR(255) PRIMARY KEY,
     url_or_path TEXT NOT NULL,
+    -- Normalised canonical form of url_or_path (lowercase, no trailing slash,
+    -- no .git suffix).  UNIQUE so two submissions of the same GitHub URL map
+    -- to one shared indexed copy rather than racing to overwrite each other.
+    canonical_url TEXT UNIQUE,
     name VARCHAR(255) NOT NULL,
     indexed_at TIMESTAMPTZ,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
@@ -83,3 +87,41 @@ CREATE INDEX IF NOT EXISTS idx_relationships_repo_source
 
 CREATE INDEX IF NOT EXISTS idx_relationships_repo_target_type 
     ON relationships (repo_id, target_id, type);
+
+-- ----------------------------------------------------------------------------
+-- 5. Users Table
+-- Identity records for API access.  external_id + provider identify an OAuth
+-- subject (e.g. GitHub user ID).  api_token_hash is the bcrypt hash of the
+-- user's personal API token — the plaintext token is never stored.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(64) PRIMARY KEY,          -- UUID hex (no hyphens)
+    external_id VARCHAR(255),            -- OAuth subject identifier
+    provider VARCHAR(50) NOT NULL DEFAULT 'local',
+    email VARCHAR(255),
+    api_token_hash TEXT,                 -- bcrypt hash of personal API token
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_users_external_provider UNIQUE (external_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+
+-- ----------------------------------------------------------------------------
+-- 6. User–Repository Access Table
+-- Controls which users may access which repository indexes and with what role.
+--   owner  — query + re-index + grant/revoke access + delete index
+--   viewer — query only
+-- The first user to submit a repository URL is auto-granted owner.
+-- Subsequent users submitting the same URL are auto-granted viewer on the
+-- shared indexed copy.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_repos (
+    user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    repo_id VARCHAR(255) NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+    granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, repo_id),
+    CONSTRAINT chk_user_repo_role CHECK (role IN ('owner', 'viewer'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_repos_repo_id ON user_repos (repo_id);

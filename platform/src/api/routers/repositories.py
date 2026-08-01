@@ -1,60 +1,141 @@
-"""Repository management router for ingestion and metadata endpoints."""
+"""Repository management router — ingestion, metadata, and access control."""
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, get_db_url
+from src.api.dependencies import (
+    get_accessible_repository,
+    get_current_user,
+    get_db,
+    get_db_url,
+    grant_repo_access,
+    require_owner,
+)
 from src.api.schemas import RepositoryCreateRequest, RepositoryResponse, RepositoryStatusResponse
 from src.jobs.queue import ingest_repo_task
-from src.storage.models import EntityModel, RelationshipModel, RepositoryModel
+from src.storage.models import EntityModel, RelationshipModel, RepositoryModel, UserModel, UserRepoModel
+from src.storage.repo_id import canonical_source, derive_repo_id, repo_name_from_source
 
 router = APIRouter()
 
+_limiter = Limiter(key_func=get_remote_address)
+_RATE_INGEST  = os.environ.get("RATE_LIMIT_INGEST",  "10/minute")
+_RATE_DEFAULT = os.environ.get("RATE_LIMIT_DEFAULT", "60/minute")
+
+
+# ---------------------------------------------------------------------------
+# Local schemas
+# ---------------------------------------------------------------------------
+
+class AccessGrantRequest(BaseModel):
+    user_id: str = Field(..., description="User ID to grant access to")
+    role: str = Field("viewer", description="Role to grant: 'owner' or 'viewer'")
+
+
+class AccessGrantResponse(BaseModel):
+    user_id: str
+    repo_id: str
+    role: str
+
+
+class RepoAccessListResponse(BaseModel):
+    repo_id: str
+    grants: list[AccessGrantResponse]
+
+
+# ---------------------------------------------------------------------------
+# Ingestion
+# ---------------------------------------------------------------------------
 
 @router.post("", response_model=RepositoryResponse, status_code=status.HTTP_202_ACCEPTED)
+@_limiter.limit(_RATE_INGEST)
 async def create_repository(
-    request: RepositoryCreateRequest,
+    request: Request,
+    body: RepositoryCreateRequest,
     db: Session = Depends(get_db),
     db_url: str = Depends(get_db_url),
+    current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> RepositoryResponse:
     """Enqueue a repository for background ingestion via Procrastinate.
 
-    Returns ``202 Accepted`` immediately with ``status: "pending"``.
-    The job is persisted in Postgres — it survives API restarts.
-    Poll ``GET /repositories/{id}/status`` until status is ``"ready"``
-    or ``"failed"``.
+    Access control on ingest
+    ------------------------
+    - New repo: caller is automatically granted ``owner`` role (if auth enabled).
+    - Repo already ``ready`` (shared index): caller is automatically granted
+      ``viewer`` role and the existing indexed data is returned immediately.
+    - Repo not ready (pending/indexing/failed): re-queued; caller's existing
+      role is preserved, or ``owner`` granted if they have no record yet.
     """
-    repo_path = Path(request.source).resolve()
-    repo_name = repo_path.name
-    repo_id = repo_path.name.lower().replace(" ", "-")
+    canon = canonical_source(body.source)
+    repo_id = derive_repo_id(body.source)
+    repo_name = repo_name_from_source(body.source)
 
-    # Upsert the repository row so the caller gets a repo_id right away
-    repo = db.query(RepositoryModel).filter_by(id=repo_id).first()
+    # Deduplication lookup — canonical_url first, then repo_id
+    repo = (
+        db.query(RepositoryModel)
+        .filter(RepositoryModel.canonical_url == canon)
+        .first()
+    ) or db.query(RepositoryModel).filter_by(id=repo_id).first()
+
+    if repo and repo.status == "ready":
+        # Shared index already exists — grant viewer access to caller if needed
+        if current_user:
+            _ensure_access(current_user.id, repo.id, default_role="viewer", db=db)
+            db.commit()
+
+        entity_count = (
+            db.query(func.count(EntityModel.id)).filter_by(repo_id=repo.id).scalar()
+        )
+        relationship_count = (
+            db.query(func.count(RelationshipModel.id)).filter_by(repo_id=repo.id).scalar()
+        )
+        return RepositoryResponse(
+            repo_id=repo.id,
+            name=repo.name,
+            status=repo.status,
+            url_or_path=repo.url_or_path,
+            entity_count=entity_count,
+            relationship_count=relationship_count,
+            indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
+        )
+
     if repo:
-        # Re-ingestion: reset to pending; the worker will clear old data
+        # Exists but not ready — reset and re-queue
         repo.status = "pending"
         repo.indexed_at = None
+        repo.canonical_url = canon
     else:
         repo = RepositoryModel(
             id=repo_id,
-            url_or_path=str(repo_path),
+            url_or_path=body.source,
+            canonical_url=canon,
             name=repo_name,
             status="pending",
         )
         db.add(repo)
+
+    db.flush()  # ensure repo.id is available before granting access
+
+    # Grant owner to the submitting user (first indexer = owner)
+    if current_user:
+        _ensure_access(current_user.id, repo.id, default_role="owner", db=db)
+
     db.commit()
 
-    # Persist the job in Postgres via Procrastinate — durable across restarts
     await ingest_repo_task.defer_async(
-        repo_path_or_url=request.source,
+        repo_path_or_url=body.source,
         db_url=db_url,
-        repo_id=repo_id,
-        repo_name=repo_name,
+        repo_id=repo.id,
+        repo_name=repo.name,
     )
 
     return RepositoryResponse(
@@ -68,27 +149,33 @@ async def create_repository(
     )
 
 
+def _ensure_access(user_id: str, repo_id: str, default_role: str, db: Session) -> None:
+    """Grant *default_role* if no access record exists yet.  Never downgrades."""
+    existing = db.query(UserRepoModel).filter_by(user_id=user_id, repo_id=repo_id).first()
+    if not existing:
+        grant_repo_access(user_id, repo_id, default_role, db)
+    # If they already have owner and we'd grant viewer, keep owner — no downgrade.
+
+
+# ---------------------------------------------------------------------------
+# Repository metadata
+# ---------------------------------------------------------------------------
+
 @router.get("/{repo_id}", response_model=RepositoryResponse)
-async def get_repository(
+@_limiter.limit(_RATE_DEFAULT)
+async def get_repository_endpoint(
+    request: Request,
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> RepositoryResponse:
-    """Return metadata for a previously ingested repository."""
-    repo = db.query(RepositoryModel).filter_by(id=repo_id).first()
-    if not repo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository with id '{repo_id}' not found",
-        )
+    """Return metadata for a repository the caller has access to."""
+    repo = get_accessible_repository(repo_id, db, current_user)
     entity_count = (
-        db.query(func.count(EntityModel.id))
-        .filter_by(repo_id=repo_id)
-        .scalar()
+        db.query(func.count(EntityModel.id)).filter_by(repo_id=repo_id).scalar()
     )
     relationship_count = (
-        db.query(func.count(RelationshipModel.id))
-        .filter_by(repo_id=repo_id)
-        .scalar()
+        db.query(func.count(RelationshipModel.id)).filter_by(repo_id=repo_id).scalar()
     )
     return RepositoryResponse(
         repo_id=repo.id,
@@ -102,20 +189,100 @@ async def get_repository(
 
 
 @router.get("/{repo_id}/status", response_model=RepositoryStatusResponse)
+@_limiter.limit(_RATE_DEFAULT)
 async def get_repository_status(
+    request: Request,
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> RepositoryStatusResponse:
-    """Return the ingestion status of a repository."""
-    repo = db.query(RepositoryModel).filter_by(id=repo_id).first()
-    if not repo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository with id '{repo_id}' not found",
-        )
+    """Return the ingestion status of a repository the caller has access to."""
+    repo = get_accessible_repository(repo_id, db, current_user)
     return RepositoryStatusResponse(
         repo_id=repo.id,
         name=repo.name,
         status=repo.status,
         indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Access management (owner-only)
+# ---------------------------------------------------------------------------
+
+@router.get("/{repo_id}/access", response_model=RepoAccessListResponse)
+@_limiter.limit(_RATE_DEFAULT)
+async def list_access(
+    request: Request,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> RepoAccessListResponse:
+    """List all users who have access to this repository.  Owner only."""
+    require_owner(repo_id, db, current_user)
+    grants = db.query(UserRepoModel).filter_by(repo_id=repo_id).all()
+    return RepoAccessListResponse(
+        repo_id=repo_id,
+        grants=[
+            AccessGrantResponse(user_id=g.user_id, repo_id=g.repo_id, role=g.role)
+            for g in grants
+        ],
+    )
+
+
+@router.post("/{repo_id}/access", response_model=AccessGrantResponse, status_code=status.HTTP_201_CREATED)
+@_limiter.limit(_RATE_DEFAULT)
+async def grant_access(
+    request: Request,
+    repo_id: str,
+    body: AccessGrantRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> AccessGrantResponse:
+    """Grant a user access to this repository.  Owner only.
+
+    Valid roles: ``owner``, ``viewer``.
+    If the user already has a grant, the role is updated.
+    """
+    require_owner(repo_id, db, current_user)
+
+    if body.role not in ("owner", "viewer"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Role must be 'owner' or 'viewer'.",
+        )
+
+    access = grant_repo_access(body.user_id, repo_id, body.role, db)
+    db.commit()
+    return AccessGrantResponse(user_id=access.user_id, repo_id=access.repo_id, role=access.role)
+
+
+@router.delete("/{repo_id}/access/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@_limiter.limit(_RATE_DEFAULT)
+async def revoke_access(
+    request: Request,
+    repo_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> None:
+    """Revoke a user's access to this repository.  Owner only.
+
+    An owner cannot revoke their own access (prevents orphaned repos).
+    """
+    require_owner(repo_id, db, current_user)
+
+    if current_user and user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot revoke your own owner access.",
+        )
+
+    access = db.query(UserRepoModel).filter_by(user_id=user_id, repo_id=repo_id).first()
+    if not access:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No access grant found for user '{user_id}' on repo '{repo_id}'.",
+        )
+    db.delete(access)
+    db.commit()

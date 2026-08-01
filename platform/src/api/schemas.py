@@ -18,8 +18,18 @@ class RepositoryCreateRequest(BaseModel):
     source: str = Field(
         ...,
         description="Local path or Git URL to the repository",
+        min_length=1,
+        max_length=500,
         examples=["/path/to/repo", "https://github.com/user/repo"],
     )
+
+    @field_validator("source")
+    @classmethod
+    def no_path_traversal(cls, v: str) -> str:
+        """Reject obvious path traversal attempts in local paths."""
+        if ".." in v.split("/") or ".." in v.split("\\"):
+            raise ValueError("Path traversal sequences ('..') are not allowed in source.")
+        return v
 
 
 class RepositoryResponse(BaseModel):
@@ -60,7 +70,7 @@ class RepositoryStatusResponse(BaseModel):
 class QueryRequest(BaseModel):
     """Request model for retrieval-only query endpoint."""
 
-    query: str = Field(..., description="Natural language query", min_length=1)
+    query: str = Field(..., description="Natural language query", min_length=1, max_length=2000)
     top_k: int = Field(10, description="Number of top results to retrieve", ge=1, le=100)
 
 
@@ -83,7 +93,7 @@ class QueryResponse(BaseModel):
 class AskRequest(BaseModel):
     """Request model for full pipeline ask endpoint."""
 
-    query: str = Field(..., description="Natural language question", min_length=1)
+    query: str = Field(..., description="Natural language question", min_length=1, max_length=2000)
     top_k: int = Field(10, description="Number of top results to retrieve", ge=1, le=100)
     # Optional model override — if omitted the server picks (Groq rotation → Gemini)
     model: Optional[str] = Field(

@@ -2,28 +2,40 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, get_repository
+from src.api.dependencies import get_db, get_accessible_repository, get_current_user
 from src.api.schemas import AskRequest, QueryResponse
+from src.storage.models import UserModel
 from src.retrieval import build_context, expand, search
 
 router = APIRouter()
 
+_limiter = Limiter(key_func=get_remote_address)
+_RATE_DEFAULT = os.environ.get("RATE_LIMIT_DEFAULT", "60/minute")
+
 
 @router.post("/{repo_id}/query", response_model=QueryResponse)
+@_limiter.limit(_RATE_DEFAULT)
 async def query_repository(
+    request: Request,
     repo_id: str,
-    request: AskRequest,
+    body: AskRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> QueryResponse:
     """Run the retrieval pipeline without LLM generation.
 
     Returns expanded entity context, execution traces, and citation anchors
     so the caller can inspect what context *would* be sent to the LLM.
     """
-    repo = get_repository(repo_id, db)
+    repo = get_accessible_repository(repo_id, db, current_user)
     if repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -35,9 +47,9 @@ async def query_repository(
 
     try:
         results = search(
-            query=request.query,
+            query=body.query,
             repo_id=repo_id,
-            top_k=request.top_k,
+            top_k=body.top_k,
             db_session=db,
         )
         expanded = expand(
@@ -47,7 +59,7 @@ async def query_repository(
         )
         final_context = build_context(
             expanded_contexts=expanded,
-            query=request.query,
+            query=body.query,
             repo_id=repo_id,
         )
 

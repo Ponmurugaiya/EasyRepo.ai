@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, get_gemini_api_key, get_repository
+from src.api.dependencies import get_db, get_gemini_api_key, get_accessible_repository, get_current_user
 from src.api.schemas import (
     AskRequest,
     AskResponse,
@@ -26,14 +29,22 @@ from src.generation import (
 from src.generation.citation_validator import collect_context_entities
 from src.retrieval import build_context, expand, search
 
+from src.storage.models import UserModel
+
 router = APIRouter()
+
+_limiter = Limiter(key_func=get_remote_address)
+_RATE_ASK = os.environ.get("RATE_LIMIT_ASK", "30/minute")
 
 
 @router.post("/{repo_id}/ask", response_model=AskResponse)
+@_limiter.limit(_RATE_ASK)
 async def ask_repository(
+    request: Request,
     repo_id: str,
-    request: AskRequest,
+    body: AskRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> AskResponse:
     """Run the full pipeline: retrieval → LLM generation → citation validation.
 
@@ -45,7 +56,7 @@ async def ask_repository(
     - bare name (e.g. ``"llama3-70b-8192"``) → provider inferred from catalogue
     """
     # ── Repository status check ──────────────────────────────────────────────
-    repo = get_repository(repo_id, db)
+    repo = get_accessible_repository(repo_id, db, current_user)
     if repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -66,25 +77,25 @@ async def ask_repository(
     skip_groq = False
     skip_gemini = False
 
-    if request.model:
-        if request.model.startswith("groq:"):
-            force_groq_model = request.model[len("groq:"):]
+    if body.model:
+        if body.model.startswith("groq:"):
+            force_groq_model = body.model[len("groq:"):]
             skip_gemini = True
-        elif request.model.startswith("gemini:"):
-            force_gemini_model = request.model[len("gemini:"):]
+        elif body.model.startswith("gemini:"):
+            force_gemini_model = body.model[len("gemini:"):]
             skip_groq = True
-        elif request.model in GROQ_MODEL_NAMES:
-            force_groq_model = request.model
+        elif body.model in GROQ_MODEL_NAMES:
+            force_groq_model = body.model
         else:
-            force_gemini_model = request.model
+            force_gemini_model = body.model
             skip_groq = True
 
     # ── Retrieval pipeline ───────────────────────────────────────────────────
     try:
         results = search(
-            query=request.query,
+            query=body.query,
             repo_id=repo_id,
-            top_k=request.top_k,
+            top_k=body.top_k,
             db_session=db,
         )
         expanded = expand(
@@ -94,7 +105,7 @@ async def ask_repository(
         )
         final_context = build_context(
             expanded_contexts=expanded,
-            query=request.query,
+            query=body.query,
             repo_id=repo_id,
         )
     except Exception as e:
@@ -110,7 +121,7 @@ async def ask_repository(
     # ── LLM generation via LiteLLM (Groq → Gemini) ───────────────────────────
     try:
         answer, provider_used = generate_answer_with_fallback(
-            query=request.query,
+            query=body.query,
             context=user_prompt,
             system_prompt=system_prompt,
             groq_model=force_groq_model,

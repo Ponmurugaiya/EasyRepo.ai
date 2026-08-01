@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -38,6 +39,10 @@ class RepositoryModel(Base):
 
     id: Mapped[str] = mapped_column(String(255), primary_key=True)
     url_or_path: Mapped[str] = mapped_column(Text, nullable=False)
+    # Normalised form of url_or_path used for deduplication.
+    # UNIQUE constraint ensures two submissions of the same GitHub URL map to
+    # one row rather than colliding on the hashed repo_id.
+    canonical_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -151,4 +156,78 @@ class RelationshipModel(Base):
         ),
         Index("idx_relationships_repo_source", "repo_id", "source_id"),
         Index("idx_relationships_repo_target_type", "repo_id", "target_id", "type"),
+    )
+
+
+class UserModel(Base):
+    """ORM model for ``users`` table.
+
+    A user is identified by an (external_id, provider) pair coming from an
+    OAuth provider (GitHub, Google, etc.) or, in dev/test mode, by a
+    locally-created account.  ``api_token_hash`` stores the bcrypt hash of
+    the user's personal API token — never the token itself.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # UUID hex
+    external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="local")
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    api_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Back-reference to access grants
+    repo_access: Mapped[List["UserRepoModel"]] = relationship(
+        "UserRepoModel", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("external_id", "provider", name="uq_users_external_provider"),
+        Index("idx_users_email", "email"),
+    )
+
+
+class UserRepoModel(Base):
+    """ORM model for ``user_repos`` join table.
+
+    Governs which users can access which repositories and with what role.
+
+    Roles
+    -----
+    owner  — can query, trigger re-indexing, grant/revoke viewer access,
+             and delete the repository index.
+    viewer — can query only.
+
+    The first user to index a repository is automatically granted ``owner``
+    role.  Subsequent users who submit the same URL receive ``viewer`` role
+    on the shared indexed copy.
+    """
+
+    __tablename__ = "user_repos"
+
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    repo_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("repositories.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    user: Mapped[UserModel] = relationship("UserModel", back_populates="repo_access")
+    repository: Mapped[RepositoryModel] = relationship("RepositoryModel")
+
+    __table_args__ = (
+        CheckConstraint("role IN ('owner', 'viewer')", name="chk_user_repo_role"),
+        Index("idx_user_repos_repo_id", "repo_id"),
     )

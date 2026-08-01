@@ -23,6 +23,9 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "procrastinate>=3.9.0",
     "psycopg[binary]>=3.3.0",
+    "slowapi>=0.1.9",
+    "redis>=4.6.0",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 [project.optional-dependencies]
