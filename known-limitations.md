@@ -65,20 +65,33 @@ VERDICT: Real 429 fallback CONFIRMED.
 
 ## 2. No async/background job queue for repository ingestion
 
-**Status:** Open — known MVP scope limitation, not a bug
+**Status:** Closed (2026-08-01) — upgraded to Procrastinate (Postgres-backed)
 
-**What happens today:** `POST /repositories` ingests synchronously — the
-HTTP request blocks until extraction, relationship resolution, embedding, and
-storage are all complete. This works fine for the ~62-entity sample repo
-(seconds), but will not scale to real-world repositories with thousands of
-files, where ingestion could take minutes and a blocking HTTP call is the
-wrong shape.
+**What was implemented:** `POST /repositories` returns `202 Accepted`
+immediately with `status: "pending"`. The job is persisted in a
+`procrastinate_jobs` table in the existing Postgres database — durable across
+API restarts, with automatic retry (3 attempts, 60 s wait).
 
-**To close this item:** Add a background job queue (e.g. a simple task queue
-or `BackgroundTasks` + polling, or a proper queue like Celery/RQ for a
-production version), with `POST /repositories` returning immediately with a
-`pending` status and `GET /repositories/{id}/status` used to poll for
-completion.
+**Architecture:**
+- `src/jobs/queue.py` — `procrastinate.App` with `PsycopgConnector` (async,
+  psycopg v3).  `ingest_repo_task` is registered as a sync task; procrastinate
+  runs it in a thread-pool so the event loop is never blocked.
+- `src/api/main.py` lifespan — opens the connector pool, applies the
+  procrastinate DDL (idempotent), starts an in-process worker as an asyncio
+  task on the `"ingestion"` queue, cancels it cleanly on shutdown.
+- `src/api/routers/repositories.py` — `POST /repositories` calls
+  `ingest_repo_task.defer_async(...)`.  No `BackgroundTasks` dependency.
+
+**Polling flow (unchanged from consumer's perspective):**
+1. `POST /repositories` → `202 { "repo_id": "...", "status": "pending" }`
+2. `GET /repositories/{id}/status` → `{ "status": "indexing" }` (while running)
+3. `GET /repositories/{id}/status` → `{ "status": "ready" }` or `{ "status": "failed" }`
+
+**New dependencies:** `procrastinate>=3.9.0`, `psycopg[binary]>=3.3.0`
+
+**Remaining trade-off:** Worker runs in-process with the API. To scale workers
+independently, run `procrastinate --app=src.jobs.queue.task_queue worker`
+as a separate process and remove `run_worker_async` from the lifespan.
 
 ---
 

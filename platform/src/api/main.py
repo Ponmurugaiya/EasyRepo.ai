@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from src.api import routers
 from src.api.routers import ask as ask_router
 from src.api.routers import repositories as repositories_router
 from src.api.routers import retrieval as retrieval_router
+from src.jobs.queue import task_queue
 from src.storage.db import get_engine, init_db
 from src.storage.models import Base
 
@@ -70,7 +72,35 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database connection failed on startup: {e}")
         raise RuntimeError(f"Database is not ready for the API: {e}") from e
 
-    yield
+    # ------------------------------------------------------------------
+    # Start the Procrastinate worker inside the same process.
+    # open_async() opens the psycopg connection pool using the DATABASE_URL
+    # environment variable (or libpq defaults).  The worker runs as a
+    # concurrent asyncio task and is cancelled cleanly on shutdown.
+    # ------------------------------------------------------------------
+    async with task_queue.open_async():
+        # Apply procrastinate's own DDL (procrastinate_jobs etc.) — idempotent
+        await task_queue.schema_manager.apply_schema_async()
+        logger.info("Procrastinate schema ready")
+
+        worker_task = asyncio.create_task(
+            task_queue.run_worker_async(
+                queues=["ingestion"],
+                install_signal_handlers=False,
+            )
+        )
+        logger.info("Procrastinate ingestion worker started")
+
+        yield
+
+        logger.info("Shutting down EasyRepo API — stopping worker...")
+        worker_task.cancel()
+        try:
+            await asyncio.wait_for(worker_task, timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Worker did not stop within 30 s — forcing shutdown")
+        except asyncio.CancelledError:
+            logger.info("Worker stopped gracefully")
 
     logger.info("Shutting down EasyRepo API...")
 

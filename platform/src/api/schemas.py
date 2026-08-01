@@ -29,15 +29,20 @@ class RepositoryResponse(BaseModel):
     name: str
     status: str
     url_or_path: str
-    entity_count: int = 0
-    relationship_count: int = 0
+    entity_count: Optional[int] = 0
+    relationship_count: Optional[int] = 0
     indexed_at: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
 
 class RepositoryStatusResponse(BaseModel):
-    """Response model for repository status endpoint."""
+    """Response model for repository status endpoint.
+
+    Clients should poll this endpoint after ``POST /repositories`` returns
+    ``202 Accepted``.  ``status`` transitions:
+    ``pending`` → ``indexing`` → ``ready`` | ``failed``.
+    """
 
     repo_id: str
     name: str

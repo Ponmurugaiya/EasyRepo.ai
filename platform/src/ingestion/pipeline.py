@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
