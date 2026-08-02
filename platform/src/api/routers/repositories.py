@@ -296,6 +296,54 @@ async def grant_access(
     return AccessGrantResponse(user_id=access.user_id, repo_id=access.repo_id, role=access.role)
 
 
+# ---------------------------------------------------------------------------
+# Entity source code
+# ---------------------------------------------------------------------------
+
+class EntitySourceResponse(BaseModel):
+    entity_id: str
+    name: str
+    file_path: str
+    start_line: int
+    end_line: int
+    language: str
+    source: str
+
+
+@router.get("/{repo_id}/entities/{entity_id}/source", response_model=EntitySourceResponse)
+@_limiter.limit(_RATE_DEFAULT)
+async def get_entity_source(
+    request: Request,
+    repo_id: str,
+    entity_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> EntitySourceResponse:
+    """Return the source code stored for a specific entity.
+
+    Used by the frontend citation viewer to show the exact code the LLM
+    cited, fetched directly from the database (no disk access required).
+    """
+    get_accessible_repository(repo_id, db, current_user)
+
+    entity = db.query(EntityModel).filter_by(id=entity_id, repo_id=repo_id).first()
+    if not entity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Entity '{entity_id}' not found in repository '{repo_id}'.",
+        )
+
+    return EntitySourceResponse(
+        entity_id=entity.id,
+        name=entity.name,
+        file_path=entity.file_path,
+        start_line=entity.start_line,
+        end_line=entity.end_line,
+        language=entity.language,
+        source=entity.source,
+    )
+
+
 @router.delete("/{repo_id}/access/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 @_limiter.limit(_RATE_DEFAULT)
 async def revoke_access(

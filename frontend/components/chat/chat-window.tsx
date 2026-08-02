@@ -79,7 +79,7 @@ export function ChatWindow({ repo }: ChatWindowProps) {
           <ScrollArea className="h-full">
             <div className="pb-4">
               {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
+                <ChatMessage key={message.id} message={message} repoId={repo.repoId} />
               ))}
               <div ref={bottomRef} />
             </div>

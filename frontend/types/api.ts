@@ -64,6 +64,16 @@ export interface AskRequest {
   model?: string;
 }
 
+export interface EntitySourceResponse {
+  entity_id: string;
+  name: string;
+  file_path: string;
+  start_line: number;
+  end_line: number;
+  language: string;
+  source: string;
+}
+
 export interface RepositoryCreateRequest {
   source: string;
 }
