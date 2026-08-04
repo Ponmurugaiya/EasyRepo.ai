@@ -6,10 +6,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { CitationPanel } from "./citation-panel";
 import { CitationCodeViewer } from "./citation-code-viewer";
 import { MarkdownContent } from "./markdown-content";
-import { Bot, User, AlertTriangle } from "lucide-react";
+import { Bot, User, AlertTriangle, GitBranch } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/types/chat";
 import { buildCitationMap } from "@/lib/citations";
 import type { ResolvedCitation } from "@/lib/citations";
+import { useGraphStore } from "@/store/graph-store";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -20,6 +21,7 @@ interface ChatMessageProps {
 export function ChatMessage({ message, repoId }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
+  const { highlightEntity } = useGraphStore();
 
   // Active citation state for the code viewer modal
   const [activeCitation, setActiveCitation] = useState<{
@@ -128,6 +130,7 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
                   citations={message.citations}
                   citationMap={citationMap}
                   onCitationClick={handleCitationClick}
+                  onShowInGraph={(entityId) => highlightEntity(entityId, repoId)}
                 />
               )}
             </>

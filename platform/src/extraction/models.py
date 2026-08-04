@@ -7,7 +7,7 @@ Language = Literal["python", "typescript", "markdown"]
 
 class Entity(BaseModel):
     id: str
-    type: Literal["module", "class", "interface", "function", "method", "doc_block"]
+    type: Literal["module", "class", "interface", "function", "method", "doc_block", "variable"]
     name: str
     file_path: str
     start_line: int

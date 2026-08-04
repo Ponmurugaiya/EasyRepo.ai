@@ -162,3 +162,90 @@ class ErrorResponse(BaseModel):
 
     detail: str
     error_code: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Graph schemas
+# ---------------------------------------------------------------------------
+
+
+class EntityConnectionSchema(BaseModel):
+    """One entity-level connection behind a file-level edge."""
+
+    from_entity_id: str
+    from_entity_name: str
+    to_entity_id: str
+    to_entity_name: str
+    rel_type: str
+    line: int
+
+
+class FileEdgeSchema(BaseModel):
+    """Aggregated cross-file relationship edge."""
+
+    source_file_id: str
+    target_file_id: str
+    rel_types: List[str]
+    dominant_type: str
+    connections: List[EntityConnectionSchema]
+
+
+class InlineEntitySchema(BaseModel):
+    """An entity embedded directly inside a FileNodeSchema."""
+
+    id: str
+    name: str
+    type: str
+    start_line: int
+    end_line: int
+    has_docstring: bool
+
+
+class FileNodeSchema(BaseModel):
+    """A file (module entity) as a graph node — entities + full source embedded."""
+
+    id: str
+    file_path: str
+    name: str
+    language: str
+    is_entry: bool
+    entry_score: int
+    depth: int = 0
+    is_root: bool = False
+    source: str = ""                          # full file source text
+    entities: List["InlineEntitySchema"] = Field(default_factory=list)
+
+
+# Resolve forward reference
+FileNodeSchema.model_rebuild()
+
+
+class FileGraphResponse(BaseModel):
+    """Response for the file-level graph endpoint."""
+
+    root: Optional[str]
+    entry_points: List[str]        # entity IDs, ranked by score
+    nodes: List[FileNodeSchema]
+    edges: List[FileEdgeSchema]
+
+
+class ExpandedEntitySchema(BaseModel):
+    """An entity inside an expanded file node."""
+
+    id: str
+    name: str
+    type: str
+    start_line: int
+    end_line: int
+    language: str
+    has_docstring: bool
+
+
+class FileExpandResponse(BaseModel):
+    """Response for the expand endpoint — entities inside one file."""
+
+    file_id: str
+    file_path: str
+    entities: List[ExpandedEntitySchema]
+    outgoing_edges: List[EntityConnectionSchema]
+    incoming_edges: List[EntityConnectionSchema]

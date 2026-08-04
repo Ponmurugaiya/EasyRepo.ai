@@ -202,6 +202,19 @@ class PythonAdapter(LanguageAdapter):
                 )
 
             # ----------------------------------------------------------------
+            # assignment (module-level variable / constant / data structure)
+            # expression_statement → assignment
+            # Captures: patient_cases = {}, CONSTANTS = "x", config = {...}
+            # Skips:    simple scalars inline ( x = 1 handled by else-recurse)
+            # ----------------------------------------------------------------
+            elif child.type == "expression_statement":
+                for sub in child.children:
+                    if sub.type == "assignment":
+                        decl = self._try_extract_variable(sub, source_bytes, is_inside_class)
+                        if decl is not None:
+                            yield decl
+
+            # ----------------------------------------------------------------
             # anything else — recurse transparently (e.g. if_block at module level)
             # ----------------------------------------------------------------
             else:
@@ -545,3 +558,88 @@ class PythonAdapter(LanguageAdapter):
     def is_interface_like(self, entity_type: str, file_path: str) -> bool:
         """True for entities typed as ``"interface"`` (i.e. in interfaces/ dir)."""
         return entity_type == "interface"
+
+    # ------------------------------------------------------------------
+    # Module-level variable extraction
+    # ------------------------------------------------------------------
+
+    # Value node types that are worth extracting as variable entities.
+    # Simple scalars (integer, float, true/false, none) are excluded because
+    # they carry little structural information.
+    _INTERESTING_VALUE_TYPES = frozenset({
+        "dictionary",       # patient_cases = {}
+        "list",             # ITEMS = []
+        "set",              # VALID = {"a", "b"}
+        "call",             # config = Config()  or  app = FastAPI()
+        "string",           # Only UPPER_CASE names (constants)
+        "concatenated_string",
+        "list_comprehension",
+        "dictionary_comprehension",
+        "set_comprehension",
+        "generator_expression",
+        "conditional_expression",
+        "binary_operator",
+        "boolean_operator",
+        "lambda",
+    })
+
+    def _try_extract_variable(
+        self,
+        assignment_node: tree_sitter.Node,
+        source_bytes: bytes,
+        is_inside_class: bool,
+    ) -> "EntityDecl | None":
+        """Try to turn a module-level assignment into a variable EntityDecl.
+
+        Returns None for uninteresting assignments (simple scalar values,
+        augmented assignments, multi-target chains we can't parse cleanly).
+        """
+        # Left-hand side
+        left = assignment_node.child_by_field_name("left")
+        # Right-hand side
+        right = assignment_node.child_by_field_name("right")
+
+        if left is None or right is None:
+            return None
+
+        # Only plain identifier targets (not a.b, a[0], tuple unpacking)
+        if left.type != "identifier":
+            return None
+
+        name = source_bytes[left.start_byte:left.end_byte].decode()
+
+        # Skip dunder names (__all__, __version__ are ok, __doc__ etc. skip)
+        # Actually keep them — __all__ = [...] is useful to know about
+        # But skip if name starts with _ and is not __all__, __version__, __slots__
+        if name.startswith("_") and name not in ("__all__", "__version__", "__slots__", "__author__"):
+            return None
+
+        value_type = right.type
+
+        # Decide whether to extract:
+        is_upper = name.isupper()  # CONSTANT_NAME → always extract if value is anything
+        is_interesting = value_type in self._INTERESTING_VALUE_TYPES
+
+        if not is_upper and not is_interesting:
+            return None
+
+        # Skip trivial string/number constants that aren't UPPER_CASE
+        if not is_upper and value_type in ("string", "concatenated_string", "integer", "float"):
+            return None
+
+        start_l, end_l = self._get_line_range(assignment_node)
+        src = source_bytes[assignment_node.start_byte:assignment_node.end_byte].decode(
+            "utf-8", errors="replace"
+        )
+
+        return EntityDecl(
+            name=name,
+            entity_type="variable",
+            start_line=start_l,
+            end_line=end_l,
+            has_docstring=False,
+            source=src,
+            body_node=None,      # variables don't have a body to recurse into
+            is_class_scope=is_inside_class,
+            ast_node=assignment_node,
+        )

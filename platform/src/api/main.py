@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from src.api.dependencies import get_db, get_db_url, verify_api_key
 from src.api.routers import ask as ask_router
 from src.api.routers import auth as auth_router
+from src.api.routers import graph as graph_router
 from src.api.routers import repositories as repositories_router
 from src.api.routers import retrieval as retrieval_router
 from src.jobs.queue import open_task_queue, task_queue
@@ -255,6 +256,12 @@ app.include_router(
     ask_router.router,
     prefix="/repositories",
     tags=["ask"],
+    dependencies=[Depends(verify_api_key)],
+)
+app.include_router(
+    graph_router.router,
+    prefix="/repositories",
+    tags=["graph"],
     dependencies=[Depends(verify_api_key)],
 )
 

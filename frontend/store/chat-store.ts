@@ -1,9 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Chat store — manages conversations and repo sessions in memory
-// Phase 1: no persistence (temporary chat). Phase 2 will add IndexedDB.
+// repoSessions and activeRepoId are persisted to localStorage so the sidebar
+// survives browser refresh without re-adding repos.
+// Conversations are NOT persisted (they reset on refresh — intentional).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   ChatMessage,
   Conversation,
@@ -48,184 +51,199 @@ interface ChatState {
   clearConversation: (repoId: string) => void;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  conversations: {},
-  activeRepoId: null,
-  repoSessions: {},
-  sidebarOpen: true,
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set, get) => ({
+      conversations: {},
+      activeRepoId: null,
+      repoSessions: {},
+      sidebarOpen: true,
 
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-  addRepoSession: (repo) =>
-    set((state) => ({
-      repoSessions: {
-        ...state.repoSessions,
-        [repo.repo_id]: {
-          repoId: repo.repo_id,
-          repoName: repo.name,
-          repoUrl: repo.url_or_path,
-          status: repo.status,
-          entityCount: repo.entity_count,
-          relationshipCount: repo.relationship_count,
-          indexedAt: repo.indexed_at,
-        },
+      addRepoSession: (repo) =>
+        set((state) => ({
+          repoSessions: {
+            ...state.repoSessions,
+            [repo.repo_id]: {
+              repoId: repo.repo_id,
+              repoName: repo.name,
+              repoUrl: repo.url_or_path,
+              status: repo.status,
+              entityCount: repo.entity_count,
+              relationshipCount: repo.relationship_count,
+              indexedAt: repo.indexed_at,
+            },
+          },
+        })),
+
+      updateRepoSession: (repoId, updates) =>
+        set((state) => ({
+          repoSessions: {
+            ...state.repoSessions,
+            [repoId]: { ...state.repoSessions[repoId], ...updates },
+          },
+        })),
+
+      setActiveRepo: (repoId) => {
+        set({ activeRepoId: repoId });
+        if (repoId && !get().conversations[repoId]) {
+          get().startConversation(repoId);
+        }
       },
-    })),
 
-  updateRepoSession: (repoId, updates) =>
-    set((state) => ({
-      repoSessions: {
-        ...state.repoSessions,
-        [repoId]: { ...state.repoSessions[repoId], ...updates },
+      startConversation: (repoId) => {
+        const repo = get().repoSessions[repoId];
+        const conv: Conversation = {
+          id: uid(),
+          repoId,
+          repoName: repo?.repoName ?? repoId,
+          repoUrl: repo?.repoUrl ?? "",
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        set((state) => ({
+          conversations: { ...state.conversations, [repoId]: conv },
+        }));
+        return conv.id;
       },
-    })),
 
-  setActiveRepo: (repoId) => {
-    set({ activeRepoId: repoId });
-    if (repoId && !get().conversations[repoId]) {
-      get().startConversation(repoId);
+      getConversation: (repoId) => get().conversations[repoId],
+
+      addUserMessage: (repoId, content) => {
+        const msgId = uid();
+        const msg: ChatMessage = {
+          id: msgId,
+          role: "user",
+          content,
+          timestamp: Date.now(),
+        };
+        set((state) => {
+          const conv = state.conversations[repoId];
+          if (!conv) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [repoId]: {
+                ...conv,
+                messages: [...conv.messages, msg],
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+        return msgId;
+      },
+
+      addLoadingMessage: (repoId) => {
+        const msgId = uid();
+        const msg: ChatMessage = {
+          id: msgId,
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          loading: true,
+        };
+        set((state) => {
+          const conv = state.conversations[repoId];
+          if (!conv) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [repoId]: {
+                ...conv,
+                messages: [...conv.messages, msg],
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+        return msgId;
+      },
+
+      resolveLoadingMessage: (repoId, loadingId, response) => {
+        set((state) => {
+          const conv = state.conversations[repoId];
+          if (!conv) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [repoId]: {
+                ...conv,
+                messages: conv.messages.map((m) =>
+                  m.id === loadingId
+                    ? {
+                        id: loadingId,
+                        role: "assistant" as const,
+                        content: response.answer,
+                        timestamp: Date.now(),
+                        provider: response.provider,
+                        citations: response.citations,
+                        context_entities: response.context_entities,
+                        loading: false as const,
+                      }
+                    : m
+                ),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      setErrorMessage: (repoId, loadingId, error) => {
+        set((state) => {
+          const conv = state.conversations[repoId];
+          if (!conv) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [repoId]: {
+                ...conv,
+                messages: conv.messages.map((m) =>
+                  m.id === loadingId
+                    ? {
+                        id: loadingId,
+                        role: "error" as const,
+                        content: error,
+                        timestamp: Date.now(),
+                      }
+                    : m
+                ),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      clearConversation: (repoId) => {
+        const repo = get().repoSessions[repoId];
+        const conv: Conversation = {
+          id: uid(),
+          repoId,
+          repoName: repo?.repoName ?? repoId,
+          repoUrl: repo?.repoUrl ?? "",
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        set((state) => ({
+          conversations: { ...state.conversations, [repoId]: conv },
+        }));
+      },
+    }),
+    {
+      name: "easyrepo-chat-store",          // localStorage key
+      storage: createJSONStorage(() => localStorage),
+      // Only persist repo sessions and active repo — NOT conversations
+      // Conversations reset on refresh (intentional — "temporary chat" UX)
+      partialize: (state) => ({
+        repoSessions: state.repoSessions,
+        activeRepoId: state.activeRepoId,
+        sidebarOpen: state.sidebarOpen,
+      }),
     }
-  },
-
-  startConversation: (repoId) => {
-    const repo = get().repoSessions[repoId];
-    const conv: Conversation = {
-      id: uid(),
-      repoId,
-      repoName: repo?.repoName ?? repoId,
-      repoUrl: repo?.repoUrl ?? "",
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    set((state) => ({
-      conversations: { ...state.conversations, [repoId]: conv },
-    }));
-    return conv.id;
-  },
-
-  getConversation: (repoId) => get().conversations[repoId],
-
-  addUserMessage: (repoId, content) => {
-    const msgId = uid();
-    const msg: ChatMessage = {
-      id: msgId,
-      role: "user",
-      content,
-      timestamp: Date.now(),
-    };
-    set((state) => {
-      const conv = state.conversations[repoId];
-      if (!conv) return state;
-      return {
-        conversations: {
-          ...state.conversations,
-          [repoId]: {
-            ...conv,
-            messages: [...conv.messages, msg],
-            updatedAt: Date.now(),
-          },
-        },
-      };
-    });
-    return msgId;
-  },
-
-  addLoadingMessage: (repoId) => {
-    const msgId = uid();
-    const msg: ChatMessage = {
-      id: msgId,
-      role: "assistant",
-      content: "",
-      timestamp: Date.now(),
-      loading: true,
-    };
-    set((state) => {
-      const conv = state.conversations[repoId];
-      if (!conv) return state;
-      return {
-        conversations: {
-          ...state.conversations,
-          [repoId]: {
-            ...conv,
-            messages: [...conv.messages, msg],
-            updatedAt: Date.now(),
-          },
-        },
-      };
-    });
-    return msgId;
-  },
-
-  resolveLoadingMessage: (repoId, loadingId, response) => {
-    set((state) => {
-      const conv = state.conversations[repoId];
-      if (!conv) return state;
-      return {
-        conversations: {
-          ...state.conversations,
-          [repoId]: {
-            ...conv,
-            messages: conv.messages.map((m) =>
-              m.id === loadingId
-                ? {
-                    id: loadingId,
-                    role: "assistant" as const,
-                    content: response.answer,
-                    timestamp: Date.now(),
-                    provider: response.provider,
-                    citations: response.citations,
-                    context_entities: response.context_entities,
-                    loading: false as const,
-                  }
-                : m
-            ),
-            updatedAt: Date.now(),
-          },
-        },
-      };
-    });
-  },
-
-  setErrorMessage: (repoId, loadingId, error) => {
-    set((state) => {
-      const conv = state.conversations[repoId];
-      if (!conv) return state;
-      return {
-        conversations: {
-          ...state.conversations,
-          [repoId]: {
-            ...conv,
-            messages: conv.messages.map((m) =>
-              m.id === loadingId
-                ? {
-                    id: loadingId,
-                    role: "error" as const,
-                    content: error,
-                    timestamp: Date.now(),
-                  }
-                : m
-            ),
-            updatedAt: Date.now(),
-          },
-        },
-      };
-    });
-  },
-
-  clearConversation: (repoId) => {
-    const repo = get().repoSessions[repoId];
-    const conv: Conversation = {
-      id: uid(),
-      repoId,
-      repoName: repo?.repoName ?? repoId,
-      repoUrl: repo?.repoUrl ?? "",
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    set((state) => ({
-      conversations: { ...state.conversations, [repoId]: conv },
-    }));
-  },
-}));
+  )
+);

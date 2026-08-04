@@ -82,6 +82,7 @@ class EntityModel(Base):
     repo_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False
     )
+    # Stored as plain string — no DB check constraint, so "variable" is valid
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)

@@ -12,7 +12,6 @@ interface ChatHeaderProps {
   onClear: () => void;
 }
 
-// Reusable icon button style — avoids nesting <button> inside TooltipTrigger
 const iconBtn = cn(
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
   "text-zinc-400 hover:text-white hover:bg-white/5 transition-colors",
@@ -26,7 +25,7 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
   return (
     <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 bg-zinc-950/60 backdrop-blur">
 
-      {/* Sidebar toggle — TooltipTrigger renders as the button directly */}
+      {/* Sidebar toggle */}
       {!sidebarOpen && (
         <Tooltip>
           <TooltipTrigger
@@ -71,7 +70,7 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
 
-        {/* GitHub link — TooltipTrigger renders as the anchor directly */}
+        {/* GitHub link */}
         {isGitHub && (
           <Tooltip>
             <TooltipTrigger
@@ -91,7 +90,7 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
           </Tooltip>
         )}
 
-        {/* Clear conversation — TooltipTrigger renders as the button directly */}
+        {/* Clear conversation */}
         <Tooltip>
           <TooltipTrigger
             render={

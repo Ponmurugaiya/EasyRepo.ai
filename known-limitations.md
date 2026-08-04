@@ -310,3 +310,47 @@ architecture, to confirm it holds up in practice.
   script output, a specific verification) — not just "fixed."
 - Don't delete closed items; keep them as a record of what was actually
   checked and when.
+
+---
+
+## 7. Graph shows 0 entities for files with only module-level variables
+
+**Status:** Partially closed
+
+**Root cause:** Files that consist entirely of module-level dict/list/variable assignments (e.g. `patient_cases = {}`, `accuracy_stats = {...}`) had no child entity records in the DB because the Python adapter previously only extracted `class_definition` and `function_definition` nodes.
+
+**Fix applied (2026-08-02):**
+- `src/languages/python_adapter.py` — added `expression_statement → assignment` handling to extract module-level variables as `type="variable"` entities
+- `src/extraction/models.py` — added `"variable"` to the `Entity.type` Literal (no DB migration needed — `entities.type` is unconstrained `VARCHAR(50)`)
+- Filter rules: dict/list/set literals always extracted, class instantiations always extracted, UPPER_CASE names always extracted, simple scalars (`x = 1`, `flag = True`) skipped
+
+**What still needs to happen:** Repos indexed before this fix need to be re-indexed to pick up variable entities. The sidebar now has a hover-visible ↺ refresh button on each repo item that re-runs the full pipeline.
+
+**To close:** Re-index an affected repo and verify variable entities appear in the graph expand response.
+
+---
+
+## 8. Code graph requires re-indexing for new entity types
+
+**Status:** Open — by design
+
+Existing repos were indexed before the `variable` entity type was added. The graph endpoint works correctly against existing data (classes, functions, methods are all shown), but files that only contain module-level variables will show "no extracted entities" until re-indexed.
+
+Re-indexing re-runs the full pipeline: clone → Tree-sitter parse → relationship resolution → Voyage AI embedding → DB insert. Takes 2–5 min and consumes Voyage AI embedding API credits.
+
+No automated migration path exists to backfill `variable` entities into existing repos without a full re-index.
+
+---
+
+## 9. Graph pagination for large repositories
+
+**Status:** Open
+
+The `GET /repositories/{id}/graph` endpoint returns all files reachable from the entry point within `depth` hops. For large repos (>200 files, dense call graphs) this can return a large payload and React Flow may struggle to lay out hundreds of nodes.
+
+**Current mitigations:**
+- Default `depth=4` limits traversal to 4 hops from entry point
+- `show_all=false` (default) excludes orphan files
+- `include_imports=false` reduces edge count significantly
+
+**To close:** Add server-side pagination or a "load neighbors on click" mode where the graph starts with only depth-1 nodes and expands lazily on node click via a new `GET /graph/{node_id}/neighbors` endpoint.

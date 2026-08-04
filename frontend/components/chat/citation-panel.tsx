@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, CheckCircle2, AlertCircle, FileCode2 } from "lucide-react";
+import { ChevronDown, CheckCircle2, AlertCircle, FileCode2, GitBranch } from "lucide-react";
 import type { ValidationReport } from "@/types/api";
 import type { ResolvedCitation } from "@/lib/citations";
 
@@ -12,12 +12,15 @@ interface CitationPanelProps {
   onCitationClick?: (index: number, citation: ResolvedCitation) => void;
   /** Map of badge number → resolved citation, used to resolve panel-row clicks */
   citationMap?: Map<number, ResolvedCitation>;
+  /** Called when user clicks "Show in graph" for a verified citation */
+  onShowInGraph?: (entityId: string) => void;
 }
 
 export function CitationPanel({
   citations,
   onCitationClick,
   citationMap,
+  onShowInGraph,
 }: CitationPanelProps) {
   const [open, setOpen] = useState(false);
 
@@ -159,10 +162,27 @@ export function CitationPanel({
                     </p>
                   )}
 
-                  {canClick && (
-                    <p className="mt-0.5 text-[10px] text-zinc-600">
-                      Click to view source
-                    </p>
+                  {/* Action row */}
+                  {(canClick || (onShowInGraph && "matched_entity_id" in c && c.matched_entity_id)) && (
+                    <div className="mt-1 flex items-center gap-2">
+                      {canClick && (
+                        <span className="text-[10px] text-zinc-600">
+                          Click to view source
+                        </span>
+                      )}
+                      {onShowInGraph && "matched_entity_id" in c && c.matched_entity_id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShowInGraph(c.matched_entity_id);
+                          }}
+                          className="flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-300 transition-colors"
+                        >
+                          <GitBranch className="h-2.5 w-2.5" />
+                          Show in graph
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

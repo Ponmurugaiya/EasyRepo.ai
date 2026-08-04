@@ -2,10 +2,13 @@
 
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chat-store";
+import { useGraphStore } from "@/store/graph-store";
 import { RepoItem } from "./repo-item";
 import { AddRepoButton } from "./add-repo-button";
-import { Bot, ChevronLeft } from "lucide-react";
+import { Bot, ChevronLeft, MessageSquare, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+type SidebarTab = "chat" | "graph";
 
 export function Sidebar() {
   const {
@@ -17,11 +20,44 @@ export function Sidebar() {
     setActiveRepo,
   } = useChatStore();
 
+  const {
+    isOpen: graphOpen,
+    activeRepoId: graphRepoId,
+    openGraph,
+    closeGraph,
+  } = useGraphStore();
+
+  // Active tab: if graph panel is open, show graph tab as active
+  const activeTab: SidebarTab = graphOpen ? "graph" : "chat";
+
   const repos = Object.values(repoSessions);
+
+  function handleTabChange(tab: SidebarTab) {
+    if (tab === "chat") {
+      closeGraph();
+    } else {
+      // Switching to graph tab — if a repo is active, open its graph
+      if (activeRepoId) {
+        openGraph(activeRepoId);
+      }
+    }
+  }
+
+  function handleRepoClickInChat(repoId: string) {
+    closeGraph();
+    setActiveRepo(repoId);
+    setSidebarOpen(false);
+  }
+
+  function handleRepoClickInGraph(repoId: string) {
+    setActiveRepo(repoId);
+    openGraph(repoId);
+    setSidebarOpen(false);
+  }
 
   return (
     <>
-      {/* Overlay for mobile */}
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/60 md:hidden"
@@ -37,7 +73,7 @@ export function Sidebar() {
           !sidebarOpen && "md:w-0 md:overflow-hidden md:border-0"
         )}
       >
-        {/* Header */}
+        {/* ── Branding header ── */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600">
@@ -48,7 +84,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-white md:flex"
+            className="h-7 w-7 text-zinc-400 hover:text-white"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           >
@@ -56,12 +92,42 @@ export function Sidebar() {
           </Button>
         </div>
 
-        {/* Add repo */}
+        {/* ── Tab switcher ── */}
+        <div className="flex border-b border-zinc-800">
+          <button
+            onClick={() => handleTabChange("chat")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium",
+              "transition-colors border-b-2",
+              activeTab === "chat"
+                ? "text-white border-blue-500"
+                : "text-zinc-500 border-transparent hover:text-zinc-300"
+            )}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Chat
+          </button>
+          <button
+            onClick={() => handleTabChange("graph")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium",
+              "transition-colors border-b-2",
+              activeTab === "graph"
+                ? "text-white border-blue-500"
+                : "text-zinc-500 border-transparent hover:text-zinc-300"
+            )}
+          >
+            <GitBranch className="h-3.5 w-3.5" />
+            Graph
+          </button>
+        </div>
+
+        {/* ── Add repo button ── */}
         <div className="px-3 py-3 border-b border-zinc-800">
           <AddRepoButton />
         </div>
 
-        {/* Repo list */}
+        {/* ── Repo list ── */}
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
           {repos.length === 0 ? (
             <div className="px-3 py-8 text-center text-xs text-zinc-500">
@@ -71,29 +137,38 @@ export function Sidebar() {
           ) : (
             repos.map((repo) => {
               const conv = conversations[repo.repoId];
-              const messageCount = conv?.messages.filter(
-                (m) => m.role === "user"
-              ).length ?? 0;
+              const messageCount =
+                conv?.messages.filter((m) => m.role === "user").length ?? 0;
+
+              const isActive =
+                activeTab === "chat"
+                  ? repo.repoId === activeRepoId && !graphOpen
+                  : repo.repoId === graphRepoId && graphOpen;
+
               return (
                 <RepoItem
                   key={repo.repoId}
                   repo={repo}
-                  active={repo.repoId === activeRepoId}
-                  messageCount={messageCount}
-                  onClick={() => {
-                    setActiveRepo(repo.repoId);
-                    setSidebarOpen(false);
-                  }}
+                  active={isActive}
+                  messageCount={activeTab === "chat" ? messageCount : 0}
+                  onClick={() =>
+                    activeTab === "chat"
+                      ? handleRepoClickInChat(repo.repoId)
+                      : handleRepoClickInGraph(repo.repoId)
+                  }
+                  showGraphHint={activeTab === "graph"}
                 />
               );
             })
           )}
         </div>
 
-        {/* Footer */}
+        {/* ── Tab hint ── */}
         <div className="px-4 py-3 border-t border-zinc-800">
           <p className="text-xs text-zinc-600">
-            Temporary session · no login required
+            {activeTab === "chat"
+              ? "Repos saved locally · no login required"
+              : "Click a repo to view its code graph"}
           </p>
         </div>
       </aside>

@@ -1,155 +1,107 @@
 # AI Codebase Intelligence Platform — Project Status
 
-**As of:** End of Step 8 (API layer + automated regression suite)
-**Overall state:** MVP complete and verified end-to-end against a synthetic
-test repository, with known open items tracked separately in
-`KNOWN_LIMITATIONS.md`.
+**As of:** Graph feature + frontend completion
+**Overall state:** Full-stack application — backend API + Next.js frontend + code graph visualization — working end-to-end.
 
 ---
 
 ## What this project is
 
-A system that clones a GitHub repository, parses it into structural entities
-(modules, classes, functions, methods) using Tree-sitter, embeds each entity
-with a code-specific embedding model, stores everything (plus their
-structural relationships — who calls whom, who inherits from whom, etc.) in
-Postgres/pgvector, and answers natural-language questions about the codebase
-by combining vector search with relationship-aware context expansion, then
-generating a cited answer via Gemini 2.5 Flash.
-
-The core bet the whole project is testing: **relationship-aware retrieval
-beats naive RAG for codebases**, because code isn't just text — it has real
-structure (call chains, class hierarchies, interfaces) that naive chunking
-throws away.
+A system that clones a GitHub repository, parses it into structural entities (modules, classes, functions, methods, variables) using Tree-sitter, embeds each entity with a code-specific embedding model, stores everything in Postgres/pgvector with structural relationships (CALLS, IMPORTS, INHERITS, IMPLEMENTS, INSTANTIATES, CONTAINS), answers natural-language questions about the codebase with cited answers, and visualizes the codebase as an interactive file-level graph.
 
 ---
 
-## What's been built and verified, step by step
+## Backend — What's built and verified
 
-### Step 1–2: Synthetic test repository + ground-truth manifest
-A hand-built sample repo (`sample-repo/`) with 14 files across Python and
-TypeScript, deliberately engineered to exercise every relationship type: a
-3-hop call chain, 3-level inheritance, interface implementation in both
-languages, two identically-named methods that must be disambiguated, two
-structurally-similar-but-semantically-different functions, and one fully
-isolated "orphan" file.
+### Extraction pipeline
+- Tree-sitter AST parsing for Python and TypeScript via a pluggable `LanguageAdapter` architecture
+- Extracts: modules, classes, interfaces, functions, methods, variables (module-level dict/list/call assignments added recently)
+- Resolves: CALLS, IMPORTS, INHERITS, IMPLEMENTS, INSTANTIATES relationships via static symbol resolution
+- 100% match against 62-entity / 87-relationship hand-built manifest (verified at Step 3–4)
 
-`test-manifest.json` hand-catalogs every entity and relationship in this repo
-— 62 entities, 87 relationships — and has served as the untouched source of
-truth for every verification step since. **Confirmed unmodified at multiple
-checkpoints throughout the project via `git diff`.**
+### Storage
+- Postgres + pgvector: `entities`, `relationships`, `repositories` tables
+- Per-entity embeddings via Voyage AI `voyage-code-3` (1024 dimensions)
+- Procrastinate (Postgres-backed) job queue for async ingestion — durable across restarts
 
-### Step 3: Tree-sitter entity extraction
-Walks the AST of each file and extracts modules, classes, functions, and
-methods with exact line ranges and parent/child structure.
+### Retrieval + generation
+- Vector search → graph expansion (CONTAINS/CALLS/INHERITS/IMPLEMENTS/INSTANTIATES)
+- Groq (multi-model rotation) → Gemini 2.5 Flash fallback via LiteLLM
+- 3-way citation classification: definition / call-site / unsupported
+- 0.0% hallucination rate on 4-question canonical test set (67 citations verified)
 
-**Verified:** 100% match against the manifest — 62/62 entities, 48/48
-CONTAINS relationships, zero line-range mismatches.
+### Auth + access control
+- `AUTH_ENABLED` env flag (default false for local dev)
+- Per-user bcrypt-hashed API tokens (`er_{prefix}.{secret}` format)
+- `owner` / `viewer` roles, auto-granted on ingestion
+- Collision-resistant `repo_id` via SHA-256 of canonical URL
 
-### Step 4: Relationship resolution (pluggable per-language architecture)
-Resolves CALLS, IMPORTS, INHERITS, and IMPLEMENTS edges via static symbol
-resolution. Refactored into a `LanguageAdapter` interface so resolver logic
-itself contains zero language-specific branching — adding a new language
-means writing a new adapter, not touching the resolvers (see
-`KNOWN_LIMITATIONS.md` #6 — this claim is architecturally sound but not yet
-proven with a third language).
-
-**Verified:** 100% match against the manifest across all 5 relationship
-types (48 CONTAINS, 11 IMPORTS, 23 CALLS, 2 INHERITS, 3 IMPLEMENTS), confirmed
-*after* the pluggable refactor to prove it was behavior-preserving.
-
-### Step 5: Postgres + pgvector storage, embedding pipeline
-Schema for entities, relationships, and repositories, with pgvector storing
-per-entity embeddings. Embedding model was corrected mid-step from a
-general-purpose text model (MiniLM) to `jinaai/jina-embeddings-v2-base-code`
-— a genuinely code-trained model — after the first choice showed weak
-disambiguation.
-
-**Verified:** All entities embedded (768 dimensions), and — critically — the
-code-specific model showed a **43-point score-range spread** vs. MiniLM's
-8-point spread on disambiguation spot-checks (e.g.
-`AuthService.validate` at 0.705 vs. `UserModel.validate` at 0.333 for the
-same query, despite identical method names).
-
-### Step 6: Relationship-aware retrieval + context expansion
-Given top-k vector search hits, expands context via real database-backed
-CONTAINS/CALLS/INHERITS/IMPLEMENTS relationships — reconstructing execution
-traces, pulling in parent classes, resolving inheritance chains — with a
-token budget and prioritization order.
-
-**Verified:** All 6 manifest test scenarios pass with real ranks and scores
-shown (not just pass/fail labels), and an automated
-`assert_all_expansions_backed_by_real_relationships` check confirms every
-expansion entry corresponds to a real database row.
-
-**Bug caught and fixed during this step:** an early version of the parent-
-expansion logic was fabricating relationships that didn't exist (e.g.
-claiming a Python module was "contained by" an unrelated TypeScript file).
-Caught by contradiction with the orphan-file test, fixed by requiring direct
-DB verification for every expansion.
-
-### Step 7: Gemini 2.5 Flash integration + citation validation
-Generates natural-language answers grounded in the structured context from
-Step 6, with a citation validator that checks every `[file:line]` citation
-in the answer against real entities and relationships.
-
-**Verified, after multiple rounds of catching real issues:**
-- A citation validator bug that was misclassifying legitimate "here's where
-  this function is called from" citations as hallucinations — fixed with a
-  3-way classification (definition / call-site / unsupported).
-- An answer that leaned on prose documentation instead of verified graph
-  data — fixed with an explicit evidence-priority rule.
-- A quality regression introduced by fixing the above — an orphan-file
-  question started citing one obscure method instead of the file's actual
-  functions — fixed structurally (auto-expanding an isolated module's
-  contents) rather than by tuning a parameter.
-- A real, honest gap around object-instantiation citations, documented as a
-  known limitation rather than silently patched.
-
-**Final state:** 4.6% true hallucination rate across 4 test questions, with
-the remaining citations traced to the documented INSTANTIATES gap — not
-unexplained noise.
-
-### Step 8: FastAPI layer + automated regression suite
-Wraps ingestion, retrieval, and generation in REST endpoints
-(`POST /repositories`, `GET /repositories/{id}`,
-`POST /repositories/{id}/query`, `POST /repositories/{id}/ask`,
-`GET /health`), and converts every manual verification script from Steps
-3–7 into a real pytest suite with specific assertions (exact ranks, exact
-entity IDs, exact counts — not generic existence checks).
-
-**Verified:** 34/34 automated tests passing, including a DB-startup health
-check (added after a real bug was caught: the live server was serving
-requests against a database whose tables hadn't been initialized), and a
-mocked-Gemini test path so the regression suite doesn't depend on Gemini's
-free-tier quota.
-
-**Not yet verified:** real (non-mocked) Gemini citation validation through
-the live HTTP endpoint specifically — tracked in `KNOWN_LIMITATIONS.md` #1.
+### Code Graph API (new)
+- `GET /repositories/{id}/graph` — file-level graph with entities embedded per node, BFS traversal from entry point, entry point auto-detected via filename heuristics + source patterns + zero-in-degree scoring
+- `GET /repositories/{id}/graph/{file_id}/expand` — full entity detail + cross-file edges for a single file
+- `GET /repositories/{id}/entities/{entity_id}/source` — raw source code for any entity
 
 ---
 
-## The methodology that got us here
+## Frontend — What's built
 
-Every step above that says "verified" earned that word the same way: by
-refusing to accept a summary claim ("all tests passed," "100% match") without
-also demanding the raw evidence behind it — actual scores, actual entity IDs,
-actual test names, actual JSON responses. Multiple real bugs in this project
-were caught **only** because a "success" summary was pushed on for the raw
-data underneath it, and turned out to be hiding something.
+### Chat interface
+- Next.js 16 + Tailwind + shadcn/ui
+- Sidebar with persistent repo sessions (localStorage via Zustand persist)
+- Chat window with citation panel (verified / call-site / unsupported badges)
+- Citation code viewer — shows highlighted source code for any cited entity
+- "Show in graph" button on each verified citation
 
-That discipline is documented in more detail, with specific before/after
-examples, in `step7-hardening-report.md`.
+### Code Graph panel
+- React Flow + Dagre hierarchical layout (entry point at top)
+- File nodes show language badge, entry point indicator (▶ ENTRY), full file path
+- Click file header → expand/collapse to show entity list (functions, classes, methods, variables)
+- Entity rows show type icon (ƒ function, ◆ class, → method, ≔ variable), name, line number
+- Edges connect files with relationship type label (CALLS = solid blue, IMPORTS = dashed gray, INHERITS = purple)
+- Hover edge → tooltip listing all entity-pair connections behind it
+- Click entity row → source code viewer opens with exact line highlighting
+- "Show in graph" from chat citation → opens panel, auto-expands file, highlights entity row in yellow
+- Controls: entry point selector, depth slider, imports toggle, expand/collapse all, refresh
+
+### Re-index flow
+- Hover a repo in sidebar → refresh icon appears
+- Click → confirms, POSTs same URL, polls status, refreshes graph panel when done
 
 ---
 
-## What to read next
+## Known gaps (current)
 
-- **`KNOWN_LIMITATIONS.md`** — the honest list of what's still open, and what
-  it will take to close each item.
-- **`step7-hardening-report.md`** — a detailed, plain-language walkthrough of
-  six real issues caught during the generation/citation step, useful as a
-  case study for anyone continuing this project with AI-assisted
-  development.
-- **`sample-repo/test-manifest.json`** — the ground-truth source of every
-  verification claim made above; still untouched since Step 2.
+- `data_store.py`-style files (only module-level variables, no functions/classes) show 0 entities in graph until re-indexed with the new extraction code
+- Re-indexing re-runs the full pipeline including Voyage AI embedding (~2–5 min, costs API credits)
+- Language support limited to Python and TypeScript
+- No pagination on graph endpoint for very large repos (>200 files)
+
+---
+
+## File structure
+
+```
+platform/
+  src/
+    api/         — FastAPI routers (repositories, ask, retrieval, graph, auth)
+    graph/       — File graph builder, BFS traversal, entry point detection
+    extraction/  — Tree-sitter entity extractor + language adapters
+    resolution/  — CALLS/IMPORTS/INHERITS/IMPLEMENTS/INSTANTIATES resolvers
+    embedding/   — Voyage AI embedder
+    ingestion/   — Full pipeline orchestration
+    retrieval/   — Vector search + graph expansion + context assembly
+    generation/  — LLM client, prompt templates, citation validator
+    storage/     — SQLAlchemy models, DB init, session management
+    jobs/        — Procrastinate async job queue
+
+frontend/
+  app/           — Next.js app router (single page layout)
+  components/
+    chat/        — Chat window, messages, citation panel, code viewer
+    graph/       — Graph panel, file node, edge components
+    sidebar/     — Sidebar, repo item, add repo button
+  store/         — Zustand stores (chat-store, graph-store)
+  lib/           — API clients (api.ts, graph-api.ts), layout utils, citations
+  types/         — TypeScript types mirroring backend schemas
+```
+  Qvb 
