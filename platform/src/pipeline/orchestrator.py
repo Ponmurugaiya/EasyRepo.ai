@@ -62,11 +62,16 @@ class PipelineResult:
         Passed to citation validation by the caller.
     provider_used:
         Which LLM provider produced the final answer.
+    trace:
+        The PipelineTrace for this run.  The caller (ask.py) must call
+        ``trace.finish()`` after citation validation so the log line
+        contains the real citation count.
     """
 
     stm: ShortTermMemory
     final_context: FinalContext
     provider_used: str = "unknown"
+    trace: "PipelineTrace | None" = None
 
 
 async def run_pipeline(
@@ -128,6 +133,7 @@ async def run_pipeline(
     )
     trace = PipelineTrace(query=query, repo_id=repo_id)
     trace.start()
+    trace.step_stm("init", stm)
 
     # ── Conversation history loading ─────────────────────────────────────────
     history_text = ""
@@ -139,11 +145,28 @@ async def run_pipeline(
                 conversation_id, user_id, db
             )
             history_text = format_history_with_summary(summary, recent_turns)
+            trace.step_history_load(
+                source="db",
+                turn_count=len(recent_turns),
+                has_summary=bool(summary),
+                conversation_id=conversation_id,
+            )
         except Exception as exc:
             logger.warning("Failed to load conversation history: %s", exc)
+            trace.step_history_load(source="none", turn_count=0, has_summary=False)
     elif conversation_history:
         # Anonymous: use what the client sent directly
         history_text = format_history(conversation_history)
+        trace.step_history_load(
+            source="client",
+            turn_count=len(conversation_history),
+            has_summary=False,
+        )
+    else:
+        trace.step_history_load(source="none", turn_count=0, has_summary=False)
+
+    if history_text:
+        trace.step_history_debug(history_text)
 
     # ── 2. Query Planner ─────────────────────────────────────────────────────
     try:
@@ -160,6 +183,7 @@ async def run_pipeline(
         stm.retrieval_strategy = "semantic_search"
         stm.search_query = query
         trace.step_planner("query", "semantic_search", query, 0.0)
+    trace.step_stm("post-plan", stm)
 
     # ── 3. Initial Retrieval ─────────────────────────────────────────────────
     results = []
@@ -215,6 +239,7 @@ async def run_pipeline(
         final_context.total_tokens_est,
         final_context.truncated,
     )
+    trace.step_stm("post-expand", stm)
 
     # ── 5. LTM Check ────────────────────────────────────────────────────────
     ltm_hit = False
@@ -255,6 +280,15 @@ async def run_pipeline(
     for attempt in range(_MAX_ITERATIONS + 1):
         context_str = render_context_for_prompt(final_context)
         context_tokens = len(context_str) // 4
+
+        # Log dispatch (model selected, context size) BEFORE the LLM call
+        trace.step_llm_dispatch(
+            attempt=attempt,
+            model=groq_model or gemini_model or "auto",
+            provider="groq" if (groq_model and not skip_groq) else ("gemini" if not skip_gemini else "unknown"),
+            context_tokens=context_tokens,
+            task_type="answer",
+        )
 
         # Log full prompt at DEBUG level
         trace.step_llm_prompt(system_prompt, context_str)
@@ -298,6 +332,11 @@ async def run_pipeline(
                 try:
                     from src.storage import ltm_store
                     ltm_store.write(repo_id, session_id, agent_response.ltm_entry, repo, db)
+                    trace.step_ltm_write(
+                        feature_name=agent_response.ltm_entry.get("feature_name", "unknown"),
+                        confidence=agent_response.ltm_entry.get("confidence", "medium"),
+                        exploration_status=agent_response.ltm_entry.get("exploration_status", "partial"),
+                    )
                 except Exception as exc:
                     logger.warning("LTM write failed: %s", exc)
             break
@@ -335,16 +374,14 @@ async def run_pipeline(
             )
 
         stm.iteration_count += 1
+        trace.step_stm(f"post-reretrieval-{stm.iteration_count}", stm)
 
-    trace.finish(
-        status=stm.answer_status,
-        provider=provider_used,
-        citation_count=0,  # citations are validated by ask.py after return
-        answer_chars=len(stm.answer_text or ""),
-    )
-
+    # Do NOT call trace.finish() here — citation validation runs in ask.py
+    # after this returns.  ask.py calls trace.finish() with the real count.
+    trace.step_stm("final", stm)
     return PipelineResult(
         stm=stm,
         final_context=final_context,
         provider_used=provider_used,
+        trace=trace,
     )

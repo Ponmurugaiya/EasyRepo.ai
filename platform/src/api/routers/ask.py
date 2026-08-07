@@ -139,12 +139,23 @@ async def ask_repository(
         db_session=db,
     )
 
-    # Log citation summary at INFO level
-    logger.info(
-        "PIPELINE [6-CITE]  repo=%s  %s",
-        repo_id,
-        report.summary_line(),
-    )
+    # Log citation summary via the structured trace (includes per-category breakdown)
+    if pipeline_result.trace:
+        pipeline_result.trace.step_citation(
+            total=report.total_citations,
+            definition=len(report.definition_citations),
+            call_site=len(report.call_site_citations),
+            unsupported=len(report.unsupported_citations),
+            rate=report.hallucination_rate,
+        )
+    # Emit PIPELINE DONE with the real citation count now that validation is complete
+    if pipeline_result.trace:
+        pipeline_result.trace.finish(
+            status=pipeline_result.stm.answer_status,
+            provider=pipeline_result.provider_used,
+            citation_count=report.total_citations,
+            answer_chars=len(answer),
+        )
     if not answer:
         logger.warning("PIPELINE: answer is empty — check LLM response and answer_agent extraction")
 
@@ -201,6 +212,7 @@ async def ask_repository(
         try:
             from src.storage import conversation_store
             from src.generation import llm_client as _llm_client
+            _trace = pipeline_result.trace
 
             conversation_store.save_turn(
                 conversation_id=body.conversation_id,
@@ -210,6 +222,10 @@ async def ask_repository(
                 content=body.query,
                 db=db,
             )
+            if _trace:
+                _trace.step_turn_saved(role="user", turn_index=-1,
+                                       conversation_id=body.conversation_id)
+
             conversation_store.save_turn(
                 conversation_id=body.conversation_id,
                 user_id=current_user.id,
@@ -218,10 +234,15 @@ async def ask_repository(
                 content=answer,
                 db=db,
             )
+            if _trace:
+                _trace.step_turn_saved(role="assistant", turn_index=-1,
+                                       conversation_id=body.conversation_id)
+
             conversation_store.maybe_summarize(
                 conversation_id=body.conversation_id,
                 db=db,
                 llm_client=_llm_client,
+                trace=_trace,
             )
         except Exception as exc:
             # Do not re-raise — persistence failure must not break the response

@@ -155,6 +155,7 @@ def maybe_summarize(
     conversation_id: str,
     db: Session,
     llm_client,
+    trace=None,
 ) -> None:
     """Compress old turns into a rolling summary when the threshold is exceeded.
 
@@ -169,6 +170,8 @@ def maybe_summarize(
         Active database session.
     llm_client:
         The llm_client module (passed to avoid circular imports).
+    trace:
+        Optional PipelineTrace for structured logging.
     """
     try:
         conv: Optional[ConversationModel] = (
@@ -235,11 +238,18 @@ def maybe_summarize(
         conv.summarized_through_turn = turns_to_compress[-1].turn_index
         db.commit()
 
-        logger.debug(
-            "Conversation %s summarised through turn %d",
-            conversation_id,
+        logger.info(
+            "Conversation %s summarised through turn %d (%d turns compressed)",
+            conversation_id[:16],
             conv.summarized_through_turn,
+            len(turns_to_compress),
         )
+        if trace:
+            trace.step_summarise(
+                conversation_id=conversation_id,
+                turns_compressed=len(turns_to_compress),
+                summarized_through=conv.summarized_through_turn,
+            )
 
     except Exception as exc:
         logger.warning("maybe_summarize failed: %s", exc)

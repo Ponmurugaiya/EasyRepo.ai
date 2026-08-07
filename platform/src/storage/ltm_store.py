@@ -71,19 +71,24 @@ def lookup(
         )
 
         if entry is None:
+            logger.debug("LTM cache miss: no entry for repo=%s session=%s intent=%s",
+                         repo_id, session_id, intent)
             return None
 
         # Stale detection: discard if repo was re-indexed after LTM was written
         if repo.indexed_at and entry.repo_indexed_at:
             if repo.indexed_at > entry.repo_indexed_at:
-                logger.debug(
-                    "LTM cache miss (stale): repo re-indexed at %s, "
-                    "entry written at %s — discarding.",
+                logger.info(
+                    "LTM cache stale: repo re-indexed at %s, entry written at %s — discarding.",
                     repo.indexed_at,
                     entry.repo_indexed_at,
                 )
                 return None
 
+        logger.info(
+            "LTM cache hit: repo=%s session=%s feature=%s confidence=%s status=%s",
+            repo_id, session_id, entry.feature_name, entry.confidence, entry.exploration_status,
+        )
         return entry
 
     except Exception as exc:
@@ -133,12 +138,13 @@ def write(
         )
         db.add(record)
         db.commit()
-        logger.debug(
-            "LTM written: repo=%s session=%s feature=%s status=%s",
+        logger.info(
+            "LTM written: repo=%s session=%s feature=%s confidence=%s status=%s",
             repo_id,
             session_id,
             ltm_entry["feature_name"],
-            ltm_entry.get("exploration_status"),
+            ltm_entry.get("confidence", "medium"),
+            ltm_entry.get("exploration_status", "partial"),
         )
     except Exception as exc:
         logger.warning("LTM write failed: %s", exc)
