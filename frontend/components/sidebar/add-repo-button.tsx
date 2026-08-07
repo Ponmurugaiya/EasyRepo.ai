@@ -113,7 +113,7 @@ function formatElapsed(seconds: number): string {
 
 type Step = "idle" | "ingesting" | "polling" | "done" | "error";
 
-export function AddRepoButton() {
+export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "ghost" }) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("");
   const [step, setStep] = useState<Step>("idle");
@@ -123,6 +123,7 @@ export function AddRepoButton() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [entityCount, setEntityCount] = useState<number | null>(null);
   const [relCount, setRelCount] = useState<number | null>(null);
+  const [addedRepoId, setAddedRepoId] = useState<string | null>(null);
 
   const abortRef = useRef(false);
   const startTimeRef = useRef<number>(0);
@@ -161,6 +162,7 @@ export function AddRepoButton() {
     try {
       const repo = await ingestRepository(source.trim());
       addRepoSession(repo);
+      setAddedRepoId(repo.repo_id);
 
       if (repo.status === "ready") {
         setStatus("ready");
@@ -247,6 +249,7 @@ export function AddRepoButton() {
         setSource("");
         setErrorMsg("");
         setProgressMessage("");
+        setAddedRepoId(null);
         startTimeRef.current = 0;
       }
     }
@@ -254,14 +257,12 @@ export function AddRepoButton() {
   }
 
   function handleDone() {
-    const store = useChatStore.getState();
-    const repos = Object.values(store.repoSessions);
-    const added = repos.find((r) => r.repoUrl === source.trim() || r.status === "ready");
-    if (added) setActiveRepo(added.repoId);
+    if (addedRepoId) setActiveRepo(addedRepoId);
     setOpen(false);
     setStep("idle");
     setSource("");
     setProgressMessage("");
+    setAddedRepoId(null);
     startTimeRef.current = 0;
   }
 
@@ -272,12 +273,12 @@ export function AddRepoButton() {
       <DialogTrigger
         render={
           <Button
-            variant="outline"
+            variant={variant}
             size="sm"
             className="w-full gap-2 border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white"
           >
             <Plus className="h-4 w-4" />
-            Add repository
+            Add new repository
           </Button>
         }
       />

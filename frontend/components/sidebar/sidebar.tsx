@@ -6,9 +6,8 @@ import { useChatStore } from "@/store/chat-store";
 import { useGraphStore } from "@/store/graph-store";
 import { useAuthStore } from "@/store/auth-store";
 import { RepoItem } from "./repo-item";
-import { AddRepoButton } from "./add-repo-button";
 import { DevLoginModal } from "@/components/auth/dev-login-modal";
-import { Bot, ChevronLeft, MessageSquare, GitBranch, KeyRound } from "lucide-react";
+import { Bot, ChevronLeft, MessageSquare, GitBranch, KeyRound, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type SidebarTab = "chat" | "graph";
@@ -79,7 +78,7 @@ export function Sidebar() {
           !sidebarOpen && "md:w-0 md:overflow-hidden md:border-0"
         )}
       >
-        {/* ── Branding header ── */}
+        {/* ── Branding header + New Chat ── */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600">
@@ -87,15 +86,31 @@ export function Sidebar() {
             </div>
             <span className="text-sm font-semibold text-white">EasyRepo</span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-white"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-zinc-400 hover:text-white"
+              onClick={() => {
+                closeGraph();
+                setActiveRepo(null);
+                setSidebarOpen(false);
+              }}
+              aria-label="New chat"
+              title="New chat"
+            >
+              <SquarePen className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-zinc-400 hover:text-white"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* ── Tab switcher ── */}
@@ -126,11 +141,6 @@ export function Sidebar() {
             <GitBranch className="h-3.5 w-3.5" />
             Graph
           </button>
-        </div>
-
-        {/* ── Add repo button ── */}
-        <div className="px-3 py-3 border-b border-zinc-800">
-          <AddRepoButton />
         </div>
 
         {/* ── Repo list ── */}

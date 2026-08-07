@@ -2,7 +2,7 @@
 
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { RotateCcw, PanelLeft, ExternalLink, FileSearch, Zap } from "lucide-react";
+import { PanelLeft, ExternalLink, FileSearch, Zap } from "lucide-react";
 import { useChatStore } from "@/store/chat-store";
 import { truncate, cn } from "@/lib/utils";
 import type { RepoSession } from "@/types/chat";
@@ -89,22 +89,6 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
             <TooltipContent>View on GitHub</TooltipContent>
           </Tooltip>
         )}
-
-        {/* Clear conversation */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                className={iconBtn}
-                onClick={onClear}
-                aria-label="Clear conversation"
-              >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-            }
-          />
-          <TooltipContent>Clear conversation</TooltipContent>
-        </Tooltip>
       </div>
     </header>
   );

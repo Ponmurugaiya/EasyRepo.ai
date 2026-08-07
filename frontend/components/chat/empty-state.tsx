@@ -3,19 +3,12 @@
 import { Bot, GitBranch, Zap, FileSearch } from "lucide-react";
 import type { RepoSession } from "@/types/chat";
 
-const SUGGESTED_QUESTIONS = [
-  "How does authentication work in this codebase?",
-  "Walk me through the main data flow",
-  "What are the key classes and their relationships?",
-  "Where are the API endpoints defined?",
-];
-
 interface EmptyStateProps {
   repo: RepoSession;
   onSuggest: (q: string) => void;
 }
 
-export function EmptyState({ repo, onSuggest }: EmptyStateProps) {
+export function EmptyState({ repo }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center">
       {/* Icon */}
@@ -48,23 +41,10 @@ export function EmptyState({ repo, onSuggest }: EmptyStateProps) {
       <h2 className="text-xl font-semibold text-white mb-1">
         What do you want to know?
       </h2>
-      <p className="text-sm text-zinc-500 mb-8 max-w-sm">
+      <p className="text-sm text-zinc-500 max-w-sm">
         Ask anything about the codebase — architecture, how specific features
         work, where code is defined, call chains, and more.
       </p>
-
-      {/* Suggested questions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
-        {SUGGESTED_QUESTIONS.map((q) => (
-          <button
-            key={q}
-            onClick={() => onSuggest(q)}
-            className="rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-left text-sm text-zinc-300 hover:bg-zinc-700/60 hover:text-white hover:border-zinc-600 transition-colors"
-          >
-            {q}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
