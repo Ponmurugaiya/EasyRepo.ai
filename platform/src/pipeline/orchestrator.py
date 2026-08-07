@@ -1,0 +1,350 @@
+"""Unified Query Pipeline Orchestrator.
+
+Coordinates the full query lifecycle:
+
+  1. Init STM (Short-Term Memory)
+  2. Query Planner   — classify intent + select strategy
+  3. Initial Retrieval — semantic search or repository walk
+  4. Graph Expansion  — relationship expander + context builder
+  5. LTM Check        — look up cached knowledge for this session
+  6. Answer Agent loop (max 3 attempts: 1 initial + 2 re-retrieval)
+     a. Answer Agent generates a structured response
+     b. If "insufficient" or "rewrite_search" → targeted re-retrieval + retry
+     c. If iteration cap hit → best-effort answer
+  7. LTM Write        — persist Answer Agent knowledge (if session_id present)
+  8. Return PipelineResult
+
+The ask.py router calls ``run_pipeline()`` and handles citation validation
+on the result — that step is intentionally NOT inside the orchestrator to
+keep it a pure data-processing concern.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from typing import Optional, TYPE_CHECKING
+
+from sqlalchemy.orm import Session
+
+from src.pipeline.memory import ShortTermMemory
+from src.pipeline.history_formatter import format_history, format_history_with_summary
+from src.pipeline.pipeline_logger import PipelineTrace
+from src.retrieval.models import ExpandedContext, FinalContext
+from src.retrieval import search, expand, build_context
+from src.generation.prompt_templates import build_system_prompt, render_context_for_prompt
+from src.generation import GROQ_MODELS
+
+if TYPE_CHECKING:
+    from src.api.schemas import ConversationTurn
+    from src.storage.models import RepositoryModel, UserModel
+
+logger = logging.getLogger(__name__)
+
+# Maximum re-retrieval iterations before forcing a best-effort answer.
+# Total LLM calls = 1 initial + _MAX_ITERATIONS re-retrieval = 3 calls max.
+_MAX_ITERATIONS = 2
+
+
+@dataclass
+class PipelineResult:
+    """Output of a full pipeline run.
+
+    Attributes
+    ----------
+    stm:
+        The Short-Term Memory state at pipeline completion.
+        ``stm.answer_text`` holds the final answer.
+        ``stm.answer_status`` is "answered" for successful completions.
+    final_context:
+        The assembled FinalContext used for the last Answer Agent call.
+        Passed to citation validation by the caller.
+    provider_used:
+        Which LLM provider produced the final answer.
+    """
+
+    stm: ShortTermMemory
+    final_context: FinalContext
+    provider_used: str = "unknown"
+
+
+async def run_pipeline(
+    query: str,
+    repo_id: str,
+    repo: "RepositoryModel",
+    session_id: Optional[str],
+    conversation_id: Optional[str],
+    conversation_history: list["ConversationTurn"],
+    user_id: Optional[str],
+    top_k: int,
+    db: Session,
+    # LLM routing overrides (passed through from ask.py)
+    groq_model: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+    gemini_model: str = "gemini-2.5-flash",
+    gemini_api_key: Optional[str] = None,
+    skip_groq: bool = False,
+    skip_gemini: bool = False,
+) -> PipelineResult:
+    """Run the full unified query pipeline.
+
+    Parameters
+    ----------
+    query:
+        User's natural language question.
+    repo_id:
+        Target repository ID.
+    repo:
+        Repository ORM row (used for LTM stale detection).
+    session_id:
+        Optional client UUID for LTM scoping.
+    conversation_id:
+        Optional stable UUID identifying the conversation thread.
+    conversation_history:
+        Last N turns from the client (anonymous users) or empty list
+        (authenticated users load history from DB inside this function).
+    user_id:
+        Authenticated user ID (None for anonymous).
+    top_k:
+        Number of entities to retrieve from vector search.
+    db:
+        Active SQLAlchemy session.
+    groq_model / groq_api_key / gemini_model / gemini_api_key:
+        LLM routing overrides forwarded from the request.
+    skip_groq / skip_gemini:
+        Force-skip provider flags.
+
+    Returns
+    -------
+    PipelineResult
+    """
+    # ── 1. Init STM ──────────────────────────────────────────────────────────
+    stm = ShortTermMemory(
+        goal=query,
+        repo_id=repo_id,
+        session_id=session_id,
+        conversation_id=conversation_id,
+    )
+    trace = PipelineTrace(query=query, repo_id=repo_id)
+    trace.start()
+
+    # ── Conversation history loading ─────────────────────────────────────────
+    history_text = ""
+    if user_id and conversation_id:
+        # Authenticated: load from DB (summary + recent unsummarised turns)
+        try:
+            from src.storage import conversation_store
+            summary, recent_turns = conversation_store.load_history(
+                conversation_id, user_id, db
+            )
+            history_text = format_history_with_summary(summary, recent_turns)
+        except Exception as exc:
+            logger.warning("Failed to load conversation history: %s", exc)
+    elif conversation_history:
+        # Anonymous: use what the client sent directly
+        history_text = format_history(conversation_history)
+
+    # ── 2. Query Planner ─────────────────────────────────────────────────────
+    try:
+        from src.generation.query_planner import plan
+        query_plan = plan(query, repo_id=repo_id)
+        stm.intent = query_plan.intent
+        stm.retrieval_strategy = query_plan.retrieval_strategy
+        stm.search_query = query_plan.search_query or query
+        trace.step_planner(stm.intent, stm.retrieval_strategy,
+                           stm.search_query, query_plan.confidence)
+    except Exception as exc:
+        logger.warning("Query Planner failed, using defaults: %s", exc)
+        stm.intent = "query"
+        stm.retrieval_strategy = "semantic_search"
+        stm.search_query = query
+        trace.step_planner("query", "semantic_search", query, 0.0)
+
+    # ── 3. Initial Retrieval ─────────────────────────────────────────────────
+    results = []
+    if stm.retrieval_strategy == "repository_walk":
+        try:
+            from src.retrieval.repo_walk import walk, to_retrieval_results
+            walk_result = walk(repo_id, db)
+            results = to_retrieval_results(walk_result)
+            # Inject architecture hint into the query context
+            if walk_result.architecture_summary_hint:
+                stm.intermediate_summaries.append(walk_result.architecture_summary_hint)
+        except Exception as exc:
+            logger.warning("Repository walk failed, falling back to semantic search: %s", exc)
+            results = search(stm.search_query, repo_id, top_k, db)
+    else:
+        results = search(stm.search_query, repo_id, top_k, db)
+
+    # Track all entity IDs seen so far
+    stm.visited_entity_ids = {r.entity_id for r in results}
+    trace.step_retrieval(stm.retrieval_strategy, len(results))
+
+    # ── 4. Graph Expansion ───────────────────────────────────────────────────
+    expanded: list[ExpandedContext] = expand(
+        retrieved_results=results,
+        repo_id=repo_id,
+        db_session=db,
+    )
+    stm.retrieved_chunks = expanded
+
+    final_context = build_context(
+        expanded_contexts=expanded,
+        query=query,
+        repo_id=repo_id,
+    )
+
+    # If we have an architecture summary from repo_walk, prepend it
+    if stm.intermediate_summaries:
+        arch_hint = stm.intermediate_summaries[0]
+        final_context = FinalContext(
+            query=final_context.query,
+            repo_id=final_context.repo_id,
+            expanded_contexts=final_context.expanded_contexts,
+            rendered_text=(
+                f"=== REPOSITORY ARCHITECTURE ===\n{arch_hint}\n\n"
+                + final_context.rendered_text
+            ),
+            total_tokens_est=final_context.total_tokens_est,
+            truncated=final_context.truncated,
+        )
+
+    trace.step_expansion(
+        len(final_context.expanded_contexts),
+        final_context.total_tokens_est,
+        final_context.truncated,
+    )
+
+    # ── 5. LTM Check ────────────────────────────────────────────────────────
+    ltm_hit = False
+    if session_id:
+        try:
+            from src.storage import ltm_store
+            ltm_entry = ltm_store.lookup(repo_id, session_id, stm.intent, repo, db)
+            if ltm_entry:
+                ltm_hit = True
+                injected_text = ltm_store.inject_ltm(
+                    final_context.rendered_text, ltm_entry
+                )
+                final_context = FinalContext(
+                    query=final_context.query,
+                    repo_id=final_context.repo_id,
+                    expanded_contexts=final_context.expanded_contexts,
+                    rendered_text=injected_text,
+                    total_tokens_est=len(injected_text) // 4,
+                    truncated=final_context.truncated,
+                )
+                trace.step_ltm(hit=True, feature_name=ltm_entry.feature_name)
+            else:
+                trace.step_ltm(hit=False)
+        except Exception as exc:
+            logger.warning("LTM lookup failed: %s", exc)
+            trace.step_ltm(hit=False)
+    else:
+        trace.step_ltm(hit=False)
+
+    # ── 6. Answer Agent loop ─────────────────────────────────────────────────
+    system_prompt = build_system_prompt()
+
+    from src.generation import answer_agent
+    from src.retrieval.targeted_retrieval import fetch as targeted_fetch
+
+    provider_used = "unknown"
+
+    for attempt in range(_MAX_ITERATIONS + 1):
+        context_str = render_context_for_prompt(final_context)
+        context_tokens = len(context_str) // 4
+
+        # Log full prompt at DEBUG level
+        trace.step_llm_prompt(system_prompt, context_str)
+
+        import time as _time
+        _llm_t0 = _time.monotonic()
+
+        agent_response = answer_agent.run(
+            query=query,
+            context=context_str,
+            system_prompt=system_prompt,
+            groq_model=groq_model,
+            groq_api_key=groq_api_key,
+            gemini_model=gemini_model,
+            gemini_api_key=gemini_api_key,
+            skip_groq=skip_groq,
+            skip_gemini=skip_gemini,
+            history_text=history_text,
+            iteration=attempt,
+        )
+
+        _llm_ms = (_time.monotonic() - _llm_t0) * 1000
+        provider_used = agent_response.provider_used
+        stm.answer_status = agent_response.status
+
+        # Log raw LLM response
+        raw_out = agent_response.raw_response or agent_response.answer or ""
+        trace.step_llm_response(
+            provider=provider_used,
+            model=groq_model or gemini_model or "auto",
+            answer_raw=raw_out,
+            status=agent_response.status,
+            elapsed_ms=_llm_ms,
+        )
+
+        if agent_response.status == "answered":
+            stm.answer_text = agent_response.answer
+
+            # Write LTM if session scoped and agent provided an entry
+            if session_id and agent_response.ltm_entry:
+                try:
+                    from src.storage import ltm_store
+                    ltm_store.write(repo_id, session_id, agent_response.ltm_entry, repo, db)
+                except Exception as exc:
+                    logger.warning("LTM write failed: %s", exc)
+            break
+
+        # On last attempt, force a best-effort answer regardless of status
+        if attempt >= _MAX_ITERATIONS:
+            stm.answer_text = (
+                agent_response.partial_answer
+                or agent_response.answer
+                or "I was unable to produce a complete answer from the available context."
+            )
+            stm.answer_status = "answered"
+            logger.debug(
+                "Answer Agent: iteration cap reached (%d) — using best-effort answer",
+                attempt,
+            )
+            break
+
+        # Re-retrieval pass
+        new_expanded = targeted_fetch(stm, agent_response, repo_id, db)
+        new_count = len(new_expanded) if new_expanded else 0
+        reason = agent_response.reason or agent_response.status
+        trace.step_reretrieval(attempt + 1, new_count, reason)
+
+        if new_expanded:
+            stm.retrieved_chunks.extend(new_expanded)
+            final_context = build_context(
+                expanded_contexts=stm.retrieved_chunks,
+                query=query,
+                repo_id=repo_id,
+            )
+        else:
+            logger.debug(
+                "Targeted retrieval returned no new entities — forcing answer on next attempt"
+            )
+
+        stm.iteration_count += 1
+
+    trace.finish(
+        status=stm.answer_status,
+        provider=provider_used,
+        citation_count=0,  # citations are validated by ask.py after return
+        answer_chars=len(stm.answer_text or ""),
+    )
+
+    return PipelineResult(
+        stm=stm,
+        final_context=final_context,
+        provider_used=provider_used,
+    )

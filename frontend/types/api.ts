@@ -58,10 +58,19 @@ export interface AskResponse {
   provider: string;
 }
 
+export interface ConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface AskRequest {
   query: string;
   top_k?: number;
   model?: string;
+  /** Stable UUID identifying the conversation thread (same value on every turn). */
+  conversation_id?: string;
+  /** Last N turns from the client — used for anonymous user context injection. */
+  conversation_history?: ConversationTurn[];
 }
 
 export interface EntitySourceResponse {

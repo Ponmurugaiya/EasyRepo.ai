@@ -1,41 +1,50 @@
 """Generation package — multi-provider answer generation with citation validation.
 
-Provider cascade: Groq (6-model rotation) → Gemini fallback, via LiteLLM.
-All LLM calls go through a single module (``llm_client.py``); there are no
-longer separate per-provider SDK files.
+Smart proactive routing: selects the best model for the task BEFORE calling it,
+based on context size, task complexity, and live quota state. Provider cascade
+(used only when a model is quota-exhausted): Groq → Gemini → OpenRouter → Cohere → Cloudflare.
 
 Public API
 ----------
-generate_answer_with_fallback(...) -> tuple[str, str]
-    Recommended entry point.  Returns ``(answer, provider_used)``.
+smart_complete(query, context, system_prompt, task_type, ...) -> tuple[str, str]
+    Primary entry point. Proactively routes to the best model for the task.
 
-generate_answer(...)  -> str
-    Legacy Gemini-only shim — kept so existing code doesn't break.
+generate_answer_with_fallback(...) -> tuple[str, str]
+    Backwards-compatible wrapper over smart_complete.
+
+generate_answer(...) -> str
+    Legacy Gemini-only shim.
 
 LLMProviderError
-    Raised when every configured provider fails.
+    Raised when every configured model is unavailable or quota-exhausted.
 
-GeminiClientError, GroqClientError
-    Backwards-compatible aliases for ``LLMProviderError``.
+ModelSpec
+    Dataclass describing one model's capabilities and quota limits.
 
-validate_citations(answer, context_entities, ...) -> ValidationReport
-    3-way citation classifier (definition / call-site / unsupported).
-
-build_system_prompt() -> str
-    System prompt that constrains citation format and evidence priority.
-
-render_context_for_prompt(final_context) -> str
-    Renders a FinalContext into a structured user-turn string.
+ALL_MODEL_SPECS : list[ModelSpec]
+    Full catalogue of all configured models with routing metadata.
 """
 
 from src.generation.llm_client import (
-    GROQ_MODELS,
-    GROQ_MODEL_NAMES,
+    # Primary routing API
+    smart_complete,
+    ModelSpec,
+    ALL_MODEL_SPECS,
+    # Backwards-compat
+    generate_answer_with_fallback,
+    generate_answer,
+    LLMProviderError,
     GeminiClientError,
     GroqClientError,
-    LLMProviderError,
-    generate_answer,
-    generate_answer_with_fallback,
+    # Model lists (name-only, for CLI/API matching)
+    GROQ_MODELS,
+    GROQ_MODEL_NAMES,
+    GEMINI_MODELS,
+    CEREBRAS_MODELS,
+    OPENROUTER_FREE_MODELS,
+    COHERE_FREE_MODELS,
+    CLOUDFLARE_FREE_MODELS,
+    ALL_FREE_MODELS,
 )
 from src.generation.prompt_templates import build_system_prompt, render_context_for_prompt
 from src.generation.citation_validator import (
@@ -46,17 +55,25 @@ from src.generation.citation_validator import (
 )
 
 __all__ = [
-    # Multi-provider router (recommended)
+    # Primary
+    "smart_complete",
+    "ModelSpec",
+    "ALL_MODEL_SPECS",
+    # Backwards-compat
     "generate_answer_with_fallback",
-    "LLMProviderError",
-    # Legacy shim
     "generate_answer",
-    # Backwards-compat exception aliases
+    "LLMProviderError",
     "GeminiClientError",
     "GroqClientError",
-    # Model catalogue
+    # Model lists
     "GROQ_MODELS",
     "GROQ_MODEL_NAMES",
+    "GEMINI_MODELS",
+    "CEREBRAS_MODELS",
+    "OPENROUTER_FREE_MODELS",
+    "COHERE_FREE_MODELS",
+    "CLOUDFLARE_FREE_MODELS",
+    "ALL_FREE_MODELS",
     # Prompts
     "build_system_prompt",
     "render_context_for_prompt",

@@ -91,6 +91,13 @@ class QueryResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ConversationTurn(BaseModel):
+    """A single turn in a conversation (user or assistant message)."""
+
+    role: str = Field(..., description="'user' or 'assistant'")
+    content: str = Field(..., description="Message text")
+
+
 class AskRequest(BaseModel):
     """Request model for full pipeline ask endpoint."""
 
@@ -104,6 +111,21 @@ class AskRequest(BaseModel):
             "Groq model (e.g. 'groq:llama3-70b-8192'), or 'gemini:' for Gemini.  "
             "Omit to use the default provider cascade (Groq → Gemini)."
         ),
+    )
+    # LTM scoping — optional, no-op when absent (backward compatible)
+    session_id: Optional[str] = Field(
+        None,
+        description="Client-generated UUID scoping long-term memory reads/writes to a session.",
+    )
+    # Conversation history — stable UUID per conversation thread
+    conversation_id: Optional[str] = Field(
+        None,
+        description="Stable UUID identifying the conversation thread (same value on every turn).",
+    )
+    # Conversation history — last N turns sent by the client for context injection
+    conversation_history: List[ConversationTurn] = Field(
+        default_factory=list,
+        description="Last N user/assistant turns from the client (used for anonymous users).",
     )
 
 

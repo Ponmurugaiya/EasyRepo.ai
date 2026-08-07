@@ -7,6 +7,7 @@ import { ArrowUp, Square } from "lucide-react";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
+  onCancel?: () => void;
   disabled?: boolean;
   loading?: boolean;
   placeholder?: string;
@@ -14,6 +15,7 @@ interface ChatInputProps {
 
 export function ChatInput({
   onSend,
+  onCancel,
   disabled,
   loading,
   placeholder = "Ask anything about this codebase…",
@@ -73,8 +75,8 @@ export function ChatInput({
           aria-label="Message input"
         />
         <Button
-          onClick={loading ? undefined : handleSend}
-          disabled={!canSend && !loading}
+          onClick={loading ? onCancel : handleSend}
+          disabled={loading ? false : !canSend}
           size="icon"
           className={cn(
             "h-8 w-8 shrink-0 rounded-full transition-colors",
@@ -82,7 +84,7 @@ export function ChatInput({
               ? "bg-blue-600 hover:bg-blue-500 text-white"
               : "bg-zinc-700 text-zinc-500 cursor-not-allowed"
           )}
-          aria-label={loading ? "Cancel" : "Send message"}
+          aria-label={loading ? "Cancel request" : "Send message"}
         >
           {loading ? (
             <Square className="h-3.5 w-3.5 fill-current" />

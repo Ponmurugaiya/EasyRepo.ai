@@ -1,7 +1,18 @@
-"""Ask router for full pipeline: retrieval -> generation -> citation validation."""
+"""Ask router — thin shim over the unified pipeline orchestrator.
+
+All retrieval + generation logic lives in ``src/pipeline/orchestrator.py``.
+This router is responsible only for:
+  1. Auth and repository status checks
+  2. Parsing model override flags from the request body
+  3. Calling ``run_pipeline()``
+  4. Running citation validation on the result
+  5. Building and returning ``AskResponse``
+  6. Persisting conversation turns for authenticated users (fire-and-forget)
+"""
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
@@ -20,18 +31,14 @@ from src.api.schemas import (
 )
 from src.generation import (
     GROQ_MODEL_NAMES,
-    LLMProviderError,
-    build_system_prompt,
-    generate_answer_with_fallback,
-    render_context_for_prompt,
     validate_citations,
 )
 from src.generation.citation_validator import collect_context_entities
-from src.retrieval import build_context, expand, search
-
+from src.pipeline.orchestrator import run_pipeline
 from src.storage.models import UserModel
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _limiter = Limiter(key_func=get_remote_address)
 _RATE_ASK = os.environ.get("RATE_LIMIT_ASK", "30/minute")
@@ -46,7 +53,7 @@ async def ask_repository(
     db: Session = Depends(get_db),
     current_user: Optional[UserModel] = Depends(get_current_user),
 ) -> AskResponse:
-    """Run the full pipeline: retrieval → LLM generation → citation validation.
+    """Run the unified query pipeline and return an answer with citations.
 
     Provider cascade: Groq (multi-model rotation) → Gemini fallback via LiteLLM.
 
@@ -54,6 +61,11 @@ async def ask_repository(
     - ``"groq:llama3-70b-8192"`` → use that Groq model only
     - ``"gemini:gemini-2.5-flash"`` → use that Gemini model only
     - bare name (e.g. ``"llama3-70b-8192"``) → provider inferred from catalogue
+
+    Conversation history:
+    - ``conversation_id`` + ``conversation_history`` enable multi-turn context.
+    - Authenticated users have turns persisted in the DB automatically.
+    - Anonymous users manage history client-side and send it in every request.
     """
     # ── Repository status check ──────────────────────────────────────────────
     repo = get_accessible_repository(repo_id, db, current_user)
@@ -68,7 +80,7 @@ async def ask_repository(
 
     # ── API keys — LiteLLM reads env vars directly; we pass explicit keys only
     # when the dependency provides them (EASYREPO_MOCK_GEMINI support, etc.)
-    gemini_key = get_gemini_api_key()   # may be "mock-gemini-key" in tests
+    gemini_key = get_gemini_api_key()
     groq_key = os.environ.get("GROQ_API_KEY", "")
 
     # ── Parse optional model override ────────────────────────────────────────
@@ -90,40 +102,18 @@ async def ask_repository(
             force_gemini_model = body.model
             skip_groq = True
 
-    # ── Retrieval pipeline ───────────────────────────────────────────────────
+    # ── Unified pipeline ─────────────────────────────────────────────────────
     try:
-        results = search(
+        pipeline_result = await run_pipeline(
             query=body.query,
             repo_id=repo_id,
+            repo=repo,
+            session_id=body.session_id,
+            conversation_id=body.conversation_id,
+            conversation_history=body.conversation_history,
+            user_id=current_user.id if current_user else None,
             top_k=body.top_k,
-            db_session=db,
-        )
-        expanded = expand(
-            retrieved_results=results,
-            repo_id=repo_id,
-            db_session=db,
-        )
-        final_context = build_context(
-            expanded_contexts=expanded,
-            query=body.query,
-            repo_id=repo_id,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Retrieval pipeline failed: {e}",
-        ) from e
-
-    # ── Prompt assembly ──────────────────────────────────────────────────────
-    system_prompt = build_system_prompt()
-    user_prompt = render_context_for_prompt(final_context)
-
-    # ── LLM generation via LiteLLM (Groq → Gemini) ───────────────────────────
-    try:
-        answer, provider_used = generate_answer_with_fallback(
-            query=body.query,
-            context=user_prompt,
-            system_prompt=system_prompt,
+            db=db,
             groq_model=force_groq_model,
             groq_api_key=groq_key or None,
             gemini_model=force_gemini_model,
@@ -131,16 +121,14 @@ async def ask_repository(
             skip_groq=skip_groq,
             skip_gemini=skip_gemini,
         )
-    except LLMProviderError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Generation failed: {e}",
-        ) from e
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Generation failed: {e}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pipeline failed: {e}",
         ) from e
+
+    answer = pipeline_result.stm.answer_text or ""
+    final_context = pipeline_result.final_context
 
     # ── Citation validation ───────────────────────────────────────────────────
     context_entities = collect_context_entities(final_context)
@@ -150,6 +138,15 @@ async def ask_repository(
         final_context=final_context,
         db_session=db,
     )
+
+    # Log citation summary at INFO level
+    logger.info(
+        "PIPELINE [6-CITE]  repo=%s  %s",
+        repo_id,
+        report.summary_line(),
+    )
+    if not answer:
+        logger.warning("PIPELINE: answer is empty — check LLM response and answer_agent extraction")
 
     definition_citations = [
         CitationMatchSchema(
@@ -199,9 +196,40 @@ async def ask_repository(
         hallucination_rate=report.hallucination_rate,
     )
 
+    # ── Persist conversation turns (authenticated users only) ─────────────────
+    if current_user and body.conversation_id:
+        try:
+            from src.storage import conversation_store
+            from src.generation import llm_client as _llm_client
+
+            conversation_store.save_turn(
+                conversation_id=body.conversation_id,
+                user_id=current_user.id,
+                repo_id=repo_id,
+                role="user",
+                content=body.query,
+                db=db,
+            )
+            conversation_store.save_turn(
+                conversation_id=body.conversation_id,
+                user_id=current_user.id,
+                repo_id=repo_id,
+                role="assistant",
+                content=answer,
+                db=db,
+            )
+            conversation_store.maybe_summarize(
+                conversation_id=body.conversation_id,
+                db=db,
+                llm_client=_llm_client,
+            )
+        except Exception as exc:
+            # Do not re-raise — persistence failure must not break the response
+            logger.warning("Failed to persist conversation turn: %s", exc)
+
     return AskResponse(
         answer=answer,
         citations=validation_report,
         context_entities=[ent.id for ent in context_entities],
-        provider=provider_used,
+        provider=pipeline_result.provider_used,
     )

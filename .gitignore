@@ -221,3 +221,7 @@ __marimo__/
 frontend/.next/
 frontend/node_modules/
 frontend/.env.local
+
+# Log files
+logs/
+*.log

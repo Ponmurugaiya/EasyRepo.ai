@@ -35,6 +35,9 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+    "integration: marks tests as integration tests (require live DB + API keys, use -m 'not integration' to skip)",
+]
 
 [tool.pyright]
 extraPaths = ["."]

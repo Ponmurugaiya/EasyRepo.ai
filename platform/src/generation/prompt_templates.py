@@ -81,10 +81,36 @@ When answering questions about code dependencies, isolation, or relationships:
    corroborating context ONLY AFTER citing the entity's own code citation.
 4. Do NOT hedge or use generalizations like "some functions/methods" or "it appears".
 
-# Response format
-- Use Markdown headings to structure your answer.
-- Cite inline: "The login method [python/services/auth_service.py:12-35] calls…"
-- End with a brief **Summary** section.
+# Response format  ← FOLLOW THIS EXACTLY
+Your response has TWO parts that MUST be separated clearly:
+
+PART 1 — Your full answer (written in Markdown):
+  - Use ## headings to organise sections.
+  - Use bullet points or numbered lists where appropriate.
+  - Include ALL inline citations as you write: "The `login` method [auth/service.py:12-35] validates…"
+  - End with a ## Summary section (2-4 sentences).
+  - Do NOT include the <answer_json> block in this section.
+
+PART 2 — Structured JSON block (mandatory, appended after Part 1):
+  - Append exactly one <answer_json>…</answer_json> block at the very end.
+  - This block must be the LAST thing in your response.
+  - The prose answer (Part 1) and its citations come BEFORE this block.
+
+Example of correct response structure:
+
+## Overview
+The `AuthService` class [services/auth.py:1-80] handles all authentication...
+
+## Login Flow
+1. `login()` [services/auth.py:12-35] validates credentials...
+2. It calls `generate_token()` [services/auth.py:36-50]...
+
+## Summary
+The authentication system uses JWT tokens managed by `AuthService`.
+
+<answer_json>
+{"status": "answered", "answer": "AuthService handles authentication via JWT.", "ltm_entry": {"feature_name": "authentication", "confidence": "high", "exploration_status": "complete", "summary": "AuthService uses JWT tokens for login."}}
+</answer_json>
 """
 
 

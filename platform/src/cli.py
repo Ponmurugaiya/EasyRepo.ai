@@ -114,9 +114,12 @@ def main() -> None:
     ask_parser.add_argument(
         "--provider",
         type=str,
-        choices=["groq", "gemini", "auto"],
+        choices=["groq", "gemini", "cerebras", "openrouter", "cohere", "cloudflare", "auto"],
         default="auto",
-        help="LLM provider: 'auto' (default) tries Groq first, then Gemini.",
+        help=(
+            "LLM provider: 'auto' (default) tries all configured free providers in cascade order: "
+            "Groq → Gemini → Cerebras → OpenRouter → Cohere → Cloudflare."
+        ),
     )
     ask_parser.add_argument(
         "--token-budget",
@@ -219,51 +222,71 @@ def main() -> None:
         if args.gemini_key:
             os.environ["GEMINI_API_KEY"] = args.gemini_key
 
-        groq_key = os.environ.get("GROQ_API_KEY", "")
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        groq_key        = os.environ.get("GROQ_API_KEY", "")
+        gemini_key      = os.environ.get("GEMINI_API_KEY", "")
+        cerebras_key    = os.environ.get("CEREBRAS_API_KEY", "")
+        openrouter_key  = os.environ.get("OPENROUTER_API_KEY", "")
+        cohere_key      = os.environ.get("COHERE_API_KEY", "")
+        cloudflare_key  = os.environ.get("CLOUDFLARE_API_KEY", "")
 
         # ── Parse provider / model flags ────────────────────────────────
         force_groq_model: str | None = args.groq_model
         force_gemini_model: str = "gemini-2.5-flash"
-        skip_groq = args.provider == "gemini"
-        skip_gemini = args.provider == "groq"
+
+        # When a specific provider is forced, skip all others
+        provider_arg = args.provider  # "auto", "groq", "gemini", "cerebras", etc.
+        skip_groq       = provider_arg not in ("auto", "groq")
+        skip_gemini     = provider_arg not in ("auto", "gemini")
+        skip_cerebras   = provider_arg not in ("auto", "cerebras")
+        skip_openrouter = provider_arg not in ("auto", "openrouter")
+        skip_cohere     = provider_arg not in ("auto", "cohere")
+        skip_cloudflare = provider_arg not in ("auto", "cloudflare")
 
         if args.model:
             if args.model.startswith("groq:"):
                 force_groq_model = args.model[len("groq:"):]
-                skip_gemini = True
+                skip_gemini = skip_cerebras = skip_openrouter = skip_cohere = skip_cloudflare = True
             elif args.model.startswith("gemini:"):
                 force_gemini_model = args.model[len("gemini:"):]
-                skip_groq = True
+                skip_groq = skip_cerebras = skip_openrouter = skip_cohere = skip_cloudflare = True
             elif args.model in GROQ_MODEL_NAMES:
                 force_groq_model = args.model
             else:
                 force_gemini_model = args.model
-                skip_groq = True
+                skip_groq = skip_cerebras = skip_openrouter = skip_cohere = skip_cloudflare = True
 
-        if not groq_key:
-            skip_groq = True
-        if not gemini_key:
-            skip_gemini = True
+        # Auto-skip providers with no key
+        if not groq_key:        skip_groq = True
+        if not gemini_key:      skip_gemini = True
+        if not cerebras_key:    skip_cerebras = True
+        if not openrouter_key:  skip_openrouter = True
+        if not cohere_key:      skip_cohere = True
+        if not cloudflare_key:  skip_cloudflare = True
 
-        if skip_groq and skip_gemini:
+        if all([skip_groq, skip_gemini, skip_cerebras, skip_openrouter, skip_cohere, skip_cloudflare]):
             print(
                 "ERROR: No LLM API keys configured.\n"
-                "  Set GROQ_API_KEY and/or GEMINI_API_KEY, "
-                "or pass --groq-key / --gemini-key.",
+                "  Set at least one of: GROQ_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY,\n"
+                "  OPENROUTER_API_KEY, COHERE_API_KEY, or CLOUDFLARE_API_KEY.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
         # ── Provider summary ─────────────────────────────────────────────
+        active_providers = []
         if not skip_groq:
-            groq_label = f"Groq ({force_groq_model or 'auto-rotate'})"
-            if not skip_gemini:
-                print(f"[*] Provider: {groq_label} → Gemini fallback ({force_gemini_model})")
-            else:
-                print(f"[*] Provider: {groq_label} (no Gemini fallback)")
-        else:
-            print(f"[*] Provider: Gemini ({force_gemini_model})")
+            active_providers.append(f"Groq ({force_groq_model or 'auto-rotate'})")
+        if not skip_gemini:
+            active_providers.append(f"Gemini ({force_gemini_model})")
+        if not skip_cerebras:
+            active_providers.append("Cerebras")
+        if not skip_openrouter:
+            active_providers.append("OpenRouter")
+        if not skip_cohere:
+            active_providers.append("Cohere")
+        if not skip_cloudflare:
+            active_providers.append("Cloudflare")
+        print(f"[*] Provider cascade: {' → '.join(active_providers)}")
 
         print(f"[*] Running retrieval for repo '{args.repo_id}'...")
         with get_session(args.db_url) as session:
@@ -300,7 +323,7 @@ def main() -> None:
             system_prompt = build_system_prompt()
             user_prompt = render_context_for_prompt(final_context)
 
-            # Step 5 — Generate answer (Groq → Gemini cascade)
+            # Step 5 — Generate answer (full free-tier cascade)
             try:
                 answer, provider_used = generate_answer_with_fallback(
                     query=args.question,
@@ -312,6 +335,10 @@ def main() -> None:
                     gemini_api_key=gemini_key or None,
                     skip_groq=skip_groq,
                     skip_gemini=skip_gemini,
+                    skip_cerebras=skip_cerebras,
+                    skip_openrouter=skip_openrouter,
+                    skip_cohere=skip_cohere,
+                    skip_cloudflare=skip_cloudflare,
                 )
                 print(f"[*] Answer generated via {provider_used.upper()}.\n")
             except LLMProviderError as e:

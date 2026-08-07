@@ -33,12 +33,110 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _env_path = Path(__file__).resolve().parents[3] / ".env"
 if _env_path.exists():
-    with open(_env_path) as _f:
+    with open(_env_path, encoding="utf-8") as _f:
         for _line in _f:
             _line = _line.strip()
             if _line and "=" in _line and not _line.startswith("#"):
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
+
+
+# ---------------------------------------------------------------------------
+# File logging — controlled by env vars:
+#
+#   LOG_TO_FILE=true          — enable file logging (default: false)
+#   LOG_DIR=logs              — directory for log files (default: "logs" in cwd)
+#   LOG_MAX_BYTES=10485760    — max bytes per log file before rotation (default: 10 MB)
+#   LOG_BACKUP_COUNT=10       — number of rotated backups to keep (default: 10)
+#   LOG_LEVEL=INFO            — file log level (default: INFO)
+#
+# When LOG_TO_FILE=true, three log files are written to LOG_DIR:
+#   app.log           — all application logs (INFO+)
+#   pipeline.log      — pipeline traces only (src.pipeline.pipeline_logger)
+#   debug.log         — everything including DEBUG (only if PIPELINE_LOG_LEVEL=DEBUG)
+#
+# Console output is unaffected — both streams run simultaneously.
+# ---------------------------------------------------------------------------
+
+def _setup_file_logging() -> None:
+    """Configure rotating file handlers if LOG_TO_FILE=true."""
+    if os.environ.get("LOG_TO_FILE", "false").lower() not in ("1", "true", "yes"):
+        return
+
+    from logging.handlers import RotatingFileHandler
+
+    log_dir = Path(os.environ.get("LOG_DIR", "logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    max_bytes   = int(os.environ.get("LOG_MAX_BYTES",  str(10 * 1024 * 1024)))  # 10 MB
+    backup_count = int(os.environ.get("LOG_BACKUP_COUNT", "10"))
+    file_level  = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+    fmt = logging.Formatter(
+        "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    root = logging.getLogger()
+
+    # ── app.log: all application logs at configured level ──────────────────
+    app_handler = RotatingFileHandler(
+        log_dir / "app.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    app_handler.setLevel(file_level)
+    app_handler.setFormatter(fmt)
+    root.addHandler(app_handler)
+
+    # ── pipeline.log: pipeline traces only ─────────────────────────────────
+    pipeline_handler = RotatingFileHandler(
+        log_dir / "pipeline.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    pipeline_handler.setLevel(logging.DEBUG)   # capture all pipeline levels
+    pipeline_handler.setFormatter(fmt)
+    pipeline_handler.addFilter(_NamePrefixFilter("src.pipeline"))
+    root.addHandler(pipeline_handler)
+
+    # ── debug.log: everything including DEBUG (only if debug mode enabled) ──
+    pipeline_log_level = os.environ.get("PIPELINE_LOG_LEVEL", "INFO").upper()
+    if pipeline_log_level == "DEBUG":
+        debug_handler = RotatingFileHandler(
+            log_dir / "debug.log",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+        debug_handler.setLevel(logging.DEBUG)
+        debug_handler.setFormatter(fmt)
+        root.addHandler(debug_handler)
+        logger.info("File logging: debug.log enabled (PIPELINE_LOG_LEVEL=DEBUG)")
+
+    logger.info(
+        "File logging enabled → %s  (max %dMB × %d backups, level=%s)",
+        log_dir.resolve(),
+        max_bytes // (1024 * 1024),
+        backup_count,
+        logging.getLevelName(file_level),
+    )
+
+
+class _NamePrefixFilter(logging.Filter):
+    """Only pass log records whose logger name starts with *prefix*."""
+    def __init__(self, prefix: str) -> None:
+        super().__init__()
+        self._prefix = prefix
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name.startswith(self._prefix)
+
+
+# Run file logging setup immediately after .env is loaded
+_setup_file_logging()
 
 
 # ---------------------------------------------------------------------------
