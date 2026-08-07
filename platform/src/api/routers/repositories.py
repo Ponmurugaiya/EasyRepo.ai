@@ -53,6 +53,53 @@ class RepoAccessListResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Repository listing (user's own repos)
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=list[RepositoryResponse])
+@_limiter.limit(_RATE_DEFAULT)
+async def list_repositories(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> list[RepositoryResponse]:
+    """List repositories accessible to the calling user.
+
+    - Authenticated user: returns only repos the user has a grant for.
+    - Anonymous (no token / auth disabled): returns all repos.
+
+    Used by the frontend to sync the sidebar after a dev login so that stale
+    anonymous-session repos the user has no access to are removed.
+    """
+    if current_user is None:
+        # Anonymous — return everything (original open-access behaviour)
+        repos = db.query(RepositoryModel).all()
+    else:
+        grants = db.query(UserRepoModel).filter_by(user_id=current_user.id).all()
+        repo_ids = {g.repo_id for g in grants}
+        repos = db.query(RepositoryModel).filter(RepositoryModel.id.in_(repo_ids)).all()
+
+    results = []
+    for repo in repos:
+        entity_count = (
+            db.query(func.count(EntityModel.id)).filter_by(repo_id=repo.id).scalar()
+        )
+        relationship_count = (
+            db.query(func.count(RelationshipModel.id)).filter_by(repo_id=repo.id).scalar()
+        )
+        results.append(RepositoryResponse(
+            repo_id=repo.id,
+            name=repo.name,
+            status=repo.status,
+            url_or_path=repo.url_or_path,
+            entity_count=entity_count,
+            relationship_count=relationship_count,
+            indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Ingestion
 # ---------------------------------------------------------------------------
 

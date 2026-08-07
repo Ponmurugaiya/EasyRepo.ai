@@ -49,6 +49,11 @@ interface ChatState {
     error: string
   ) => void;
   clearConversation: (repoId: string) => void;
+  /** Remove a pending/loading message without leaving any error bubble. */
+  removePendingMessage: (repoId: string, msgId: string) => void;
+  /** Replace the repo session list with the server's authoritative list.
+   *  Called after dev login to prune repos the user has no access to. */
+  syncRepoSessions: (repos: RepositoryResponse[]) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -233,16 +238,69 @@ export const useChatStore = create<ChatState>()(
           conversations: { ...state.conversations, [repoId]: conv },
         }));
       },
+
+      removePendingMessage: (repoId, msgId) => {
+        set((state) => {
+          const conv = state.conversations[repoId];
+          if (!conv) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [repoId]: {
+                ...conv,
+                messages: conv.messages.filter((m) => m.id !== msgId),
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      syncRepoSessions: (repos) => {
+        // Build new session map from server response
+        const newSessions: Record<string, RepoSession> = {};
+        for (const repo of repos) {
+          newSessions[repo.repo_id] = {
+            repoId: repo.repo_id,
+            repoName: repo.name,
+            repoUrl: repo.url_or_path,
+            status: repo.status,
+            entityCount: repo.entity_count,
+            relationshipCount: repo.relationship_count,
+            indexedAt: repo.indexed_at,
+          };
+        }
+        // Prune active repo and conversations for repos no longer accessible
+        const accessibleIds = new Set(Object.keys(newSessions));
+        set((state) => {
+          const prunedConversations = Object.fromEntries(
+            Object.entries(state.conversations).filter(([id]) => accessibleIds.has(id))
+          );
+          const nextActiveId =
+            state.activeRepoId && accessibleIds.has(state.activeRepoId)
+              ? state.activeRepoId
+              : null;
+          return {
+            repoSessions: newSessions,
+            conversations: prunedConversations,
+            activeRepoId: nextActiveId,
+          };
+        });
+      },
     }),
     {
       name: "easyrepo-chat-store",          // localStorage key
       storage: createJSONStorage(() => localStorage),
-      // Only persist repo sessions and active repo — NOT conversations
-      // Conversations reset on refresh (intentional — "temporary chat" UX)
+      // Persist repo sessions, active repo, sidebar state, AND conversations.
+      // For anonymous users the conversations are cleared on explicit "New chat"
+      // but survive accidental refresh (intentional UX improvement).
+      // For dev-login users the backend DB is the authoritative store; the
+      // localStorage copy is just a display buffer that survives refresh.
       partialize: (state) => ({
         repoSessions: state.repoSessions,
         activeRepoId: state.activeRepoId,
         sidebarOpen: state.sidebarOpen,
+        conversations: state.conversations,
       }),
     }
   )

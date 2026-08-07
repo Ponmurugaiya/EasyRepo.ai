@@ -63,13 +63,24 @@ def get_current_user(
 ) -> Optional[UserModel]:
     """Resolve the calling user from the X-API-Key header.
 
-    Returns a ``UserModel`` when auth is enabled and the token is valid.
-    Returns ``None`` when auth is disabled (dev / local mode).
-    Raises 401 when auth is enabled and the token is missing or invalid.
+    When AUTH_ENABLED=true: a valid token is required — raises 401 if missing
+    or invalid.
+
+    When AUTH_ENABLED=false (default dev mode): auth is optional.  If an
+    X-API-Key header is present it is resolved to a user (giving persistent
+    conversation history); if absent or invalid the request proceeds as
+    anonymous (None).  This lets anonymous and developer sessions coexist
+    without flipping a global flag.
     """
     if not _auth_enabled():
-        return None
+        # Optional auth — try to resolve a user but never block the request.
+        if not x_api_key:
+            return None
+        from src.api.auth import lookup_user_by_token
+        user = lookup_user_by_token(x_api_key, db)
+        return user  # None if token is wrong — still anonymous, no error
 
+    # Strict auth — token is mandatory.
     if not x_api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -148,11 +159,17 @@ def get_accessible_repository(
 
     Rules:
     - Auth disabled (current_user is None): any existing repo is accessible.
-    - Auth enabled: the user must have a ``user_repos`` row for this repo.
+    - Auth enabled / optional-auth with a resolved user:
+        * If the user already has a user_repos row → allow.
+        * If the repo exists and is ``ready`` → auto-grant viewer access so
+          that a dev user whose token was added after the repo was first indexed
+          (when they were anonymous) never gets a hard 403.  This matches the
+          "shared index" behaviour documented in the ingest endpoint.
+        * If the repo is not ready and the user has no grant → 403.
 
     Raises:
     - 404 if the repository does not exist.
-    - 403 if it exists but the user has no access record.
+    - 403 if it exists, is not yet ready, and the user has no access record.
     """
     repo = db.query(RepositoryModel).filter_by(id=repo_id).first()
     if not repo:
@@ -170,14 +187,22 @@ def get_accessible_repository(
         .filter_by(user_id=current_user.id, repo_id=repo_id)
         .first()
     )
-    if not access:
-        # Repo exists but this user has no grant — return 403, not 404,
-        # because 404 would hint that the repo doesn't exist at all.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You do not have access to repository '{repo_id}'.",
-        )
-    return repo
+    if access:
+        return repo
+
+    # No grant yet — auto-grant viewer on ready repos (shared-index convenience)
+    if repo.status == "ready":
+        grant_repo_access(current_user.id, repo_id, "viewer", db)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        return repo
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"You do not have access to repository '{repo_id}'.",
+    )
 
 
 def require_owner(

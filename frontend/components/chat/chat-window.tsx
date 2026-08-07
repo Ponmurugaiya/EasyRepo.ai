@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useChatStore } from "@/store/chat-store";
-import { askRepository } from "@/lib/api";
+import { askRepository, ApiError } from "@/lib/api";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { EmptyState } from "./empty-state";
@@ -21,6 +21,7 @@ export function ChatWindow({ repo }: ChatWindowProps) {
     addLoadingMessage,
     resolveLoadingMessage,
     setErrorMessage,
+    removePendingMessage,
     clearConversation,
   } = useChatStore();
 
@@ -90,8 +91,11 @@ export function ChatWindow({ repo }: ChatWindowProps) {
         resolveLoadingMessage(repo.repoId, loadingId, response);
       } catch (err: unknown) {
         // User-initiated cancel — remove the loading bubble silently
-        if (err instanceof DOMException && err.name === "AbortError") {
-          setErrorMessage(repo.repoId, loadingId, "Request cancelled.");
+        if (
+          (err instanceof DOMException && err.name === "AbortError") ||
+          (err instanceof ApiError && err.status === 0)
+        ) {
+          removePendingMessage(repo.repoId, loadingId);
           return;
         }
         const msg =
@@ -111,6 +115,7 @@ export function ChatWindow({ repo }: ChatWindowProps) {
       addUserMessage,
       addLoadingMessage,
       resolveLoadingMessage,
+      removePendingMessage,
       setErrorMessage,
     ]
   );
