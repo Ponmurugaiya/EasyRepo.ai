@@ -187,6 +187,54 @@ async def run_pipeline(
 
     # ── 3. Initial Retrieval ─────────────────────────────────────────────────
     results = []
+
+    # Overview intents use the hierarchical summarisation pipeline — bypass
+    # normal retrieval and go straight to repo_overview.run()
+    if stm.intent in ("repository_overview", "repository_detailed"):
+        try:
+            from src.retrieval.repo_overview import run as run_overview
+            # Log that retrieval is handled by the overview pipeline (not vector search)
+            trace.step_retrieval("repository_overview", 0)
+            overview_answer = await run_overview(
+                query=query,
+                intent=stm.intent,
+                repo_id=repo_id,
+                repo=repo,
+                session_id=session_id,
+                db=db,
+                trace=trace,
+                stm=stm,
+            )
+            stm.answer_text = overview_answer
+            stm.answer_status = "answered"
+            # Log expansion step — entities visited during file/folder agents
+            trace.step_expansion(
+                len(stm.visited_entity_ids),
+                len(overview_answer) // 4,
+                False,
+            )
+            trace.step_stm("post-expand", stm)
+            trace.step_stm("final", stm)
+            # Build a minimal FinalContext so ask.py can run citation validation
+            from src.retrieval.models import FinalContext as _FC
+            empty_context = _FC(
+                query=query,
+                repo_id=repo_id,
+                expanded_contexts=[],
+                rendered_text=overview_answer,
+                total_tokens_est=len(overview_answer) // 4,
+                truncated=False,
+            )
+            return PipelineResult(
+                stm=stm,
+                final_context=empty_context,
+                provider_used="gemini",
+                trace=trace,
+            )
+        except Exception as exc:
+            logger.error("Overview pipeline failed, falling back to semantic search: %s", exc)
+            # Fall through to standard pipeline
+
     if stm.retrieval_strategy == "repository_walk":
         try:
             from src.retrieval.repo_walk import walk, to_retrieval_results

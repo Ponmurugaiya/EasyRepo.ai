@@ -77,6 +77,7 @@ class CitationMismatch:
     end_line: int
     reason: str
     nearest_entity: Optional[str] = None
+    nearest_entity_id: Optional[str] = None  # canonical entity ID for correction agent
 
 
 @dataclass
@@ -365,7 +366,7 @@ def validate_citations(
                 break
 
         if not matched:
-            nearest = _describe_nearest(candidates, start_line)
+            nearest, nearest_id = _describe_nearest(candidates, start_line)
             unsupported.append(
                 CitationMismatch(
                     raw=raw,
@@ -374,6 +375,7 @@ def validate_citations(
                     end_line=end_line,
                     reason=f"No entity in '{file_path}' covers lines {start_line}-{end_line}.",
                     nearest_entity=nearest,
+                    nearest_entity_id=nearest_id,
                 )
             )
             continue
@@ -598,13 +600,18 @@ def _fuzzy_file_match(
     return None
 
 
-def _describe_nearest(entities: "list[EntityModel]", target_line: int) -> str:
-    """Return a human-readable description of the entity closest to *target_line*."""
+def _describe_nearest(entities: "list[EntityModel]", target_line: int) -> tuple[str, str]:
+    """Return (human-readable description, entity_id) for the entity closest to *target_line*.
+
+    The description uses the entity's actual file_path (not the claimed path)
+    so the correction agent can build a correct citation tag from it.
+    """
     closest = min(
         entities,
         key=lambda e: min(abs(e.start_line - target_line), abs(e.end_line - target_line)),
     )
-    return f"'{closest.name}' [{closest.start_line}-{closest.end_line}]"
+    description = f"'{closest.name}' [{closest.file_path}:{closest.start_line}-{closest.end_line}]"
+    return description, closest.id
 
 
 # ---------------------------------------------------------------------------

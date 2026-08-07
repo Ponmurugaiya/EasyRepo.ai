@@ -86,3 +86,12 @@ class ShortTermMemory:
 
     # Re-retrieval loop counter
     iteration_count: int = 0
+
+    # ── Overview pipeline additions ──────────────────────────────────────────
+    # Populated by repo_overview.py when intent is repository_overview/detailed.
+    # Key = canonical file_path as stored in EntityModel.file_path
+    file_summaries: dict[str, str] = field(default_factory=dict)
+    # Key = folder path (e.g. "src/api", "src/storage", ".")
+    folder_summaries: dict[str, str] = field(default_factory=dict)
+    # True when the final answer was served entirely from LTM (no agents ran)
+    overview_from_cache: bool = False

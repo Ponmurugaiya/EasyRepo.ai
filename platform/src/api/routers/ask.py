@@ -139,6 +139,29 @@ async def ask_repository(
         db_session=db,
     )
 
+    # ── Citation correction (fix unsupported citations before returning) ──────
+    if report.unsupported_citations:
+        try:
+            from src.generation.citation_correction_agent import run as correct_citations
+            correction = correct_citations(
+                answer=answer,
+                report=report,
+                context_entities=context_entities,
+                final_context=final_context,
+                db_session=db,
+            )
+            answer = correction.corrected_answer
+            report = correction.report
+            if pipeline_result.trace and correction.corrections_made > 0:
+                pipeline_result.trace.step_citation_correction(
+                    original_unsupported=correction.original_unsupported,
+                    corrections_made=correction.corrections_made,
+                    remaining_unsupported=correction.remaining_unsupported,
+                    method=correction.method,
+                )
+        except Exception as exc:
+            logger.warning("Citation correction failed (non-fatal): %s", exc)
+
     # Log citation summary via the structured trace (includes per-category breakdown)
     if pipeline_result.trace:
         pipeline_result.trace.step_citation(
@@ -195,6 +218,7 @@ async def ask_repository(
             end_line=c.end_line,
             reason=c.reason,
             nearest_entity=c.nearest_entity,
+            nearest_entity_id=c.nearest_entity_id,
         )
         for c in report.unsupported_citations
     ]

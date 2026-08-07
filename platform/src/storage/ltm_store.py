@@ -152,11 +152,7 @@ def write(
 
 
 def inject_ltm(final_context_text: str, ltm_entry: ConversationMemoryModel) -> str:
-    """Prepend the LTM summary to the rendered context text.
-
-    This surfaces the previously cached knowledge before the newly retrieved
-    context so the Answer Agent can reason from both.
-    """
+    """Prepend the LTM summary to the rendered context text."""
     ltm_block = (
         f"\n=== LONG-TERM MEMORY (from previous session turns) ===\n"
         f"Feature: {ltm_entry.feature_name}\n"
@@ -166,3 +162,84 @@ def inject_ltm(final_context_text: str, ltm_entry: ConversationMemoryModel) -> s
         f"=== END LONG-TERM MEMORY ===\n"
     )
     return ltm_block + final_context_text
+
+
+# ---------------------------------------------------------------------------
+# Overview-specific helpers — folder and repo-level summary cache
+# ---------------------------------------------------------------------------
+
+def lookup_by_feature(
+    repo_id: str,
+    session_id: Optional[str],
+    feature_name: str,
+    repo: RepositoryModel,
+    db: Session,
+) -> Optional[ConversationMemoryModel]:
+    """Look up any LTM entry by exact feature_name (not intent mapping).
+
+    Used by the overview pipeline to check folder-level cache entries
+    (feature_name = "folder:src/api") and repo-level cache
+    (feature_name = "repo_overview" | "repo_detailed").
+    """
+    if not session_id:
+        return None
+    try:
+        entry = (
+            db.query(ConversationMemoryModel)
+            .filter_by(
+                repo_id=repo_id,
+                session_id=session_id,
+                feature_name=feature_name,
+                exploration_status="complete",
+            )
+            .order_by(ConversationMemoryModel.created_at.desc())
+            .first()
+        )
+        if entry is None:
+            return None
+        # Stale detection
+        if repo.indexed_at and entry.repo_indexed_at:
+            if repo.indexed_at > entry.repo_indexed_at:
+                logger.info("LTM stale (overview): feature=%s", feature_name)
+                return None
+        return entry
+    except Exception as exc:
+        logger.warning("LTM lookup_by_feature failed: %s", exc)
+        return None
+
+
+def write_feature(
+    repo_id: str,
+    session_id: str,
+    feature_name: str,
+    summary: str,
+    repo: RepositoryModel,
+    db: Session,
+    confidence: str = "high",
+    source_entity_ids: Optional[list] = None,
+) -> None:
+    """Write a named LTM entry (folder summary or repo overview summary)."""
+    if not session_id:
+        return
+    try:
+        record = ConversationMemoryModel(
+            repo_id=repo_id,
+            session_id=session_id,
+            feature_name=feature_name,
+            summary=summary,
+            source_entity_ids=source_entity_ids or [],
+            graph_paths=[],
+            confidence=confidence,
+            exploration_status="complete",
+            repo_indexed_at=repo.indexed_at,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(record)
+        db.commit()
+        logger.info(
+            "LTM written (overview): repo=%s feature=%s",
+            repo_id, feature_name,
+        )
+    except Exception as exc:
+        logger.warning("LTM write_feature failed: %s", exc)
+        db.rollback()

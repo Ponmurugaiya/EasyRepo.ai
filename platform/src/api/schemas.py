@@ -152,6 +152,7 @@ class CitationMismatchSchema(BaseModel):
     end_line: int
     reason: str
     nearest_entity: Optional[str] = None
+    nearest_entity_id: Optional[str] = None
 
 
 class ValidationReportSchema(BaseModel):

@@ -195,21 +195,22 @@ class PipelineTrace:
         outcome: str,         # "hit" | "miss" | "stale" | "skipped"
         feature_name: Optional[str] = None,
         reason: Optional[str] = None,
+        step: int = 4,        # pipeline step number for the log prefix
     ) -> None:
         """Unified LTM read log — INFO for hit/stale, DEBUG for miss/skipped."""
+        label = f"{step}-LTM READ"
         if outcome == "hit":
             _log(logging.INFO,
-                 "PIPELINE [4-LTM READ]  outcome=hit  feature=%s  elapsed=%s",
-                 feature_name, self._elapsed())
+                 "PIPELINE [%s]  outcome=hit  feature=%s  elapsed=%s",
+                 label, feature_name, self._elapsed())
         elif outcome == "stale":
             _log(logging.INFO,
-                 "PIPELINE [4-LTM READ]  outcome=stale  feature=%s  reason=%s  elapsed=%s",
-                 feature_name, reason or "", self._elapsed())
+                 "PIPELINE [%s]  outcome=stale  feature=%s  reason=%s  elapsed=%s",
+                 label, feature_name, reason or "", self._elapsed())
         else:
-            # miss / skipped — only interesting at DEBUG
             _log(logging.DEBUG,
-                 "PIPELINE [4-LTM READ]  outcome=%s  elapsed=%s",
-                 outcome, self._elapsed())
+                 "PIPELINE [%s]  outcome=%s  elapsed=%s",
+                 label, outcome, self._elapsed())
 
     # Keep old name as alias so existing orchestrator callers still work
     def step_ltm(self, hit: bool, feature_name: Optional[str] = None) -> None:
@@ -223,11 +224,12 @@ class PipelineTrace:
         feature_name: str,
         confidence: str,
         exploration_status: str,
+        step: int = 4,        # pipeline step number for the log prefix
     ) -> None:
         """Log when LTM knowledge is written after an answered response."""
         _log(logging.INFO,
-             "PIPELINE [4-LTM WRITE]  feature=%s  confidence=%s  status=%s  elapsed=%s",
-             feature_name, confidence, exploration_status, self._elapsed())
+             "PIPELINE [%d-LTM WRITE]  feature=%s  confidence=%s  status=%s  elapsed=%s",
+             step, feature_name, confidence, exploration_status, self._elapsed())
 
     # ── Step 5 — LLM dispatch + response ─────────────────────────────────────
 
@@ -329,3 +331,52 @@ class PipelineTrace:
              "PIPELINE DONE  status=%s  provider=%s  "
              "citations=%d  answer_chars=%d  total_ms=%.0f",
              status, provider, citation_count, answer_chars, total_ms)
+
+    # ── Overview pipeline steps ───────────────────────────────────────────────
+
+    def step_file_agent(
+        self,
+        file_path: str,
+        tokens: int,
+        elapsed_ms: float,
+        from_cache: bool = False,
+    ) -> None:
+        _log(logging.INFO,
+             "PIPELINE [FILE-AGENT]  file=%s  tokens=%d  elapsed=%.0fms  cache=%s",
+             file_path, tokens, elapsed_ms, from_cache)
+
+    def step_folder_agent(
+        self,
+        folder: str,
+        file_count: int,
+        elapsed_ms: float,
+        from_cache: bool = False,
+    ) -> None:
+        _log(logging.INFO,
+             "PIPELINE [FOLDER-AGENT]  folder=%s  files=%d  elapsed=%.0fms  cache=%s",
+             folder, file_count, elapsed_ms, from_cache)
+
+    def step_overview_assembled(
+        self,
+        file_count: int,
+        folder_count: int,
+        visited_entities: int,
+    ) -> None:
+        _log(logging.INFO,
+             "PIPELINE [OVERVIEW]  file_summaries=%d  folder_summaries=%d  visited=%d  elapsed=%s",
+             file_count, folder_count, visited_entities, self._elapsed())
+
+    # ── Citation correction step ──────────────────────────────────────────────
+
+    def step_citation_correction(
+        self,
+        original_unsupported: int,
+        corrections_made: int,
+        remaining_unsupported: int,
+        method: str = "deterministic",
+    ) -> None:
+        _log(logging.INFO,
+             "PIPELINE [6-CORRECT]  original_unsupported=%d  corrections_made=%d  "
+             "remaining=%d  method=%s  elapsed=%s",
+             original_unsupported, corrections_made, remaining_unsupported,
+             method, self._elapsed())
