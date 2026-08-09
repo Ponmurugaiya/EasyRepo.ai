@@ -304,6 +304,7 @@ async def run(
             intent=intent,
             query=query,
             total_files=len(file_entity_map),
+            file_paths=list(file_entity_map.keys()),
             trace=trace,
         )
         stm.answer_status = "answered"

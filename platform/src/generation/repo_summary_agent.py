@@ -30,44 +30,118 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 You are a senior software architect writing documentation for a codebase.
-Using the folder summaries provided, write a comprehensive repository overview.
+You will be given:
+  1. A PROJECT STRUCTURE tree showing all files and their paths
+  2. Folder summaries describing each folder's purpose and key entities
+
+Use BOTH to write a comprehensive repository overview.
 
 For a BRIEF overview (repository_overview): 4-6 paragraphs covering:
   - What the project does (1 paragraph)
-  - Core architecture and key subsystems (2 paragraphs)
+  - Core architecture and key subsystems — reference the actual folder/file structure (2 paragraphs)
   - Main data flows and how components interact (1 paragraph)
-  - Entry points and how to navigate the codebase (1 paragraph)
+  - Entry points and how to navigate the codebase — mention specific files by path (1 paragraph)
 
 For a DETAILED walkthrough (repository_detailed): Section-per-folder:
-  - Each section: folder purpose, key files, main classes/functions
+  - Show the folder's files from the project structure
+  - Each section: folder purpose, key files with their exact paths, main classes/functions
   - More inline citations per section
   - Cross-folder relationships and dependency patterns
+
+Project structure rules:
+  - When describing the layout, use the exact file paths from the PROJECT STRUCTURE tree.
+  - You may reproduce the structure tree as a code block in your answer to show the layout.
 
 Citation rules (CRITICAL):
   - Use ONLY citations that appear in the folder summaries provided.
   - Format: [file_path:start_line-end_line]
   - Do NOT invent file paths or line numbers.
-  - If a folder summary contains [auth/service.py:45-89], you may reuse that exact citation.
 
 Do NOT use <answer_json> blocks — write the Markdown answer directly.
 """
+
+
+def _build_file_tree(file_paths: list[str]) -> str:
+    """Build a directory tree string from a flat list of file paths.
+
+    Input:  ["src/api/main.py", "src/api/auth.py", "src/storage/db.py", "README.md"]
+    Output:
+        .
+        ├── README.md
+        └── src/
+            ├── api/
+            │   ├── auth.py
+            │   └── main.py
+            └── storage/
+                └── db.py
+    """
+    from collections import defaultdict
+
+    # Normalise separators
+    normalised = [p.replace("\\", "/") for p in sorted(file_paths)]
+
+    # Build nested dict tree
+    def insert(tree: dict, parts: list[str]) -> None:
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+
+    tree: dict = {}
+    for path in normalised:
+        insert(tree, path.split("/"))
+
+    # Render to ASCII art
+    lines: list[str] = ["."]
+
+    def render(node: dict, prefix: str) -> None:
+        items = sorted(node.keys())
+        for i, name in enumerate(items):
+            is_last = i == len(items) - 1
+            connector = "└── " if is_last else "├── "
+            child = node[name]
+            if child:
+                # directory
+                lines.append(f"{prefix}{connector}{name}/")
+                extension = "    " if is_last else "│   "
+                render(child, prefix + extension)
+            else:
+                # file
+                lines.append(f"{prefix}{connector}{name}")
+
+    render(tree, "")
+    return "\n".join(lines)
 
 
 def _build_context(
     repo_name: str,
     folder_summaries: dict[str, str],
     total_files: int,
+    file_paths: Optional[list[str]] = None,
 ) -> str:
-    """Build the context string from folder summaries."""
+    """Build the context string: file tree + folder summaries."""
+    parts: list[str] = []
+
+    # 1. Repository header
+    parts.append(
+        f"Repository: {repo_name}  |  "
+        f"{total_files} files across {len(folder_summaries)} folders"
+    )
+
+    # 2. Full project structure tree
+    if file_paths:
+        tree = _build_file_tree(file_paths)
+        parts.append(
+            f"\n=== PROJECT STRUCTURE ===\n{tree}\n=== END PROJECT STRUCTURE ==="
+        )
+
+    # 3. Folder summaries with citations
     folder_parts = [
         f"=== {folder} ===\n{summary}"
         for folder, summary in sorted(folder_summaries.items())
     ]
-    arch_hint = (
-        f"Repository: {repo_name}  |  "
-        f"{total_files} files across {len(folder_summaries)} folders\n\n"
-    )
-    return arch_hint + "\n\n".join(folder_parts)
+    parts.append("\n\n".join(folder_parts))
+
+    return "\n\n".join(parts)
 
 
 def summarize_repo(
@@ -76,6 +150,7 @@ def summarize_repo(
     intent: str,
     query: str,
     total_files: int = 0,
+    file_paths: Optional[list[str]] = None,
     trace: Optional["PipelineTrace"] = None,
 ) -> tuple[str, str]:
     """Synthesise folder summaries into a final repository overview answer.
@@ -92,6 +167,9 @@ def summarize_repo(
         Original user query (included in the LLM prompt for grounding).
     total_files:
         Total number of files in the repo (for the architecture hint).
+    file_paths:
+        All file paths indexed in the repo — rendered as a project structure
+        tree prepended to the context so the LLM can describe the layout.
     trace:
         Optional PipelineTrace for structured logging.
 
@@ -103,7 +181,7 @@ def summarize_repo(
     import src.generation.llm_client as _llm
     from src.generation.llm_client import LLMProviderError
 
-    context = _build_context(repo_name, folder_summaries, total_files)
+    context = _build_context(repo_name, folder_summaries, total_files, file_paths)
     context_tokens = len(context) // 4
     mode = "detailed" if intent == "repository_detailed" else "brief"
     repo_query = f"Write a {mode} overview of this repository. Query: {query}"
