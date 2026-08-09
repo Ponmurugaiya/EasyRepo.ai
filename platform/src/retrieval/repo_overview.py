@@ -40,31 +40,6 @@ logger = logging.getLogger(__name__)
 # Max files to process per async batch (controls concurrency vs. rate-limit risk)
 _BATCH_SIZE = int(os.environ.get("OVERVIEW_BATCH_SIZE", "5"))
 
-# System prompt for the final Repo Summary Agent
-_REPO_OVERVIEW_SYSTEM = """\
-You are a senior software architect writing documentation for a codebase.
-Using the folder summaries provided, write a comprehensive repository overview.
-
-For a BRIEF overview (repository_overview): 4-6 paragraphs covering:
-  - What the project does (1 paragraph)
-  - Core architecture and key subsystems (2 paragraphs)
-  - Main data flows and how components interact (1 paragraph)
-  - Entry points and how to navigate the codebase (1 paragraph)
-
-For a DETAILED walkthrough (repository_detailed): Section-per-folder:
-  - Each section: folder purpose, key files, main classes/functions
-  - More inline citations per section
-  - Cross-folder relationships and dependency patterns
-
-Citation rules (CRITICAL):
-  - Use ONLY citations that appear in the folder summaries provided.
-  - Format: [file_path:start_line-end_line]
-  - Do NOT invent file paths or line numbers.
-  - If a folder summary contains [auth/service.py:45-89], you may reuse that exact citation.
-
-Do NOT use <answer_json> blocks — just write the Markdown answer directly.
-"""
-
 
 def _folder_for_file(file_path: str) -> str:
     """Return the folder path for a file (first directory component, or '.')."""
@@ -96,12 +71,13 @@ async def _summarize_files_async(
 
     async def _process_one(file_path: str, source: str, entities: "list[EntityModel]") -> None:
         t0 = time.monotonic()
-        loop = asyncio.get_event_loop()
-        summary = await loop.run_in_executor(
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
             None,
             lambda: summarize_file(file_path, source, entities, repo_id),
         )
         elapsed = (time.monotonic() - t0) * 1000
+        summary, prompt_tokens, completion_tokens = result
         stm.file_summaries[file_path] = summary
         # Track entity IDs as visited
         for ent in entities:
@@ -109,9 +85,10 @@ async def _summarize_files_async(
         if trace:
             trace.step_file_agent(
                 file_path=file_path,
-                tokens=len(source) // 4,
+                tokens=prompt_tokens,
                 elapsed_ms=elapsed,
                 from_cache=False,
+                summary=summary,
             )
 
     # Process in batches to limit concurrent API calls
@@ -208,7 +185,8 @@ async def run(
         if cached:
             stm.overview_from_cache = True
             if trace:
-                trace.step_ltm_read(outcome="hit", feature_name=ltm_feature, step=3)
+                trace.step_ltm_read(outcome="hit", feature_name=ltm_feature, step=3,
+                                    ltm_summary=cached.summary)
             logger.info("Overview: LTM full-repo hit for %s", ltm_feature)
             return cached.summary
         if trace:
@@ -242,8 +220,10 @@ async def run(
                         file_count=len(folders[folder]),
                         elapsed_ms=0,
                         from_cache=True,
+                        summary=cached_folder.summary,
                     )
-                    trace.step_ltm_read(outcome="hit", feature_name=folder_feature, step=3)
+                    trace.step_ltm_read(outcome="hit", feature_name=folder_feature, step=3,
+                                        ltm_summary=cached_folder.summary)
 
     # ── Step 4: File Agents (async batched) for uncached files ───────────────
     await _summarize_files_async(file_entity_map, repo_id, stm, trace)
@@ -264,11 +244,12 @@ async def run(
             continue
 
         t0 = time.monotonic()
-        folder_summary = await asyncio.get_event_loop().run_in_executor(
+        folder_result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda f=folder, ffs=folder_file_summaries: summarize_folder(f, ffs),
         )
         elapsed = (time.monotonic() - t0) * 1000
+        folder_summary, folder_prompt_tokens, _ = folder_result
         stm.folder_summaries[folder] = folder_summary
 
         if trace:
@@ -277,6 +258,8 @@ async def run(
                 file_count=len(folder_file_summaries),
                 elapsed_ms=elapsed,
                 from_cache=False,
+                summary=folder_summary,
+                input_tokens=folder_prompt_tokens,
             )
 
         # Write folder LTM entry
@@ -301,6 +284,7 @@ async def run(
                     confidence="high",
                     exploration_status="complete",
                     step=5,
+                    summary=folder_summary,
                 )
 
     if trace:
@@ -311,77 +295,20 @@ async def run(
         )
 
     # ── Step 6: Repo Summary Agent ────────────────────────────────────────────
-    import src.generation.llm_client as _llm
+    from src.generation.repo_summary_agent import summarize_repo
 
-    # Build context from folder summaries
-    folder_context_parts = []
-    for folder, summary in sorted(stm.folder_summaries.items()):
-        folder_context_parts.append(f"=== {folder} ===\n{summary}")
-
-    repo_context = "\n\n".join(folder_context_parts)
-
-    total_files = len(file_entity_map)
-    total_folders = len(stm.folder_summaries)
-    arch_hint = (
-        f"Repository: {repo.name}  |  "
-        f"{total_files} files across {total_folders} folders\n\n"
-    )
-
-    full_context = arch_hint + repo_context
-    context_tokens = len(full_context) // 4
-    mode = "detailed" if intent == "repository_detailed" else "brief"
-    repo_query = f"Write a {mode} overview of this repository. Query: {query}"
-
-    system_with_mode = _REPO_OVERVIEW_SYSTEM.replace(
-        "For a BRIEF overview (repository_overview):",
-        f"For a {'BRIEF' if mode == 'brief' else 'DETAILED'} overview ({intent}):",
-    )
-
-    if trace:
-        trace.step_llm_dispatch(
-            attempt=0,
-            model="gemini-2.5-flash",
-            provider="gemini",
-            context_tokens=context_tokens,
-            task_type="repo_summary",
-        )
-
-    import time as _time
-    _t0 = _time.monotonic()
     try:
-        answer, provider = _llm.smart_complete(
-            query=repo_query,
-            context=full_context,
-            system_prompt=system_with_mode,
-            task_type="standard",
-            # Prefer Gemini for the final synthesis — better quality on long contexts
-            force_provider="gemini",
+        answer, provider = summarize_repo(
+            repo_name=repo.name,
+            folder_summaries=stm.folder_summaries,
+            intent=intent,
+            query=query,
+            total_files=len(file_entity_map),
+            trace=trace,
         )
-        _elapsed_ms = (_time.monotonic() - _t0) * 1000
         stm.answer_status = "answered"
-        if trace:
-            trace.step_llm_response(
-                provider=provider,
-                model="gemini-2.5-flash",
-                answer_raw=answer,
-                status="answered",
-                elapsed_ms=_elapsed_ms,
-            )
-        logger.info(
-            "Overview: Repo Summary Agent done — %d chars via %s",
-            len(answer), provider,
-        )
     except Exception as exc:
-        _elapsed_ms = (_time.monotonic() - _t0) * 1000
         logger.error("Overview: Repo Summary Agent failed: %s", exc)
-        if trace:
-            trace.step_llm_response(
-                provider="unknown",
-                model="gemini-2.5-flash",
-                answer_raw="",
-                status="error",
-                elapsed_ms=_elapsed_ms,
-            )
         # Best-effort fallback: concatenate folder summaries
         answer = (
             f"# {repo.name} — Repository Overview\n\n"
@@ -390,6 +317,7 @@ async def run(
                 for folder, summary in sorted(stm.folder_summaries.items())
             )
         )
+        provider = "fallback"
         stm.answer_status = "answered"
 
     # ── Step 7: Write repo-level LTM entry ───────────────────────────────────
@@ -408,6 +336,7 @@ async def run(
                 confidence="high",
                 exploration_status="complete",
                 step=7,
+                summary=answer,
             )
 
     return answer

@@ -325,7 +325,7 @@ def main() -> None:
 
             # Step 5 — Generate answer (full free-tier cascade)
             try:
-                answer, provider_used = generate_answer_with_fallback(
+                answer, provider_used, _, _ = generate_answer_with_fallback(
                     query=args.question,
                     context=user_prompt,
                     system_prompt=system_prompt,

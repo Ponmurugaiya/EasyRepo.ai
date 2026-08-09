@@ -20,6 +20,7 @@ export function Sidebar() {
     sidebarOpen,
     setSidebarOpen,
     setActiveRepo,
+    startNewChat,
   } = useChatStore();
 
   const {
@@ -93,7 +94,7 @@ export function Sidebar() {
               className="h-7 w-7 text-zinc-400 hover:text-white"
               onClick={() => {
                 closeGraph();
-                setActiveRepo(null);
+                startNewChat();
                 setSidebarOpen(false);
               }}
               aria-label="New chat"

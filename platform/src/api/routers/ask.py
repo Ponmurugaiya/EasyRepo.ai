@@ -44,6 +44,31 @@ _limiter = Limiter(key_func=get_remote_address)
 _RATE_ASK = os.environ.get("RATE_LIMIT_ASK", "30/minute")
 
 
+def _run_summarize_in_own_session(
+    conversation_id: str,
+    db_url: str,
+    llm_client,
+    trace,
+) -> None:
+    """Open a dedicated DB session for maybe_summarize and run it.
+
+    Called from a thread pool — must NOT share the request session.
+    Any exception is caught and logged silently so it never crashes the server.
+    """
+    try:
+        from src.storage.db import get_session
+        from src.storage import conversation_store
+        with get_session(db_url) as own_db:
+            conversation_store.maybe_summarize(
+                conversation_id=conversation_id,
+                db=own_db,
+                llm_client=llm_client,
+                trace=trace,
+            )
+    except Exception as exc:
+        logger.warning("Background summarize failed: %s", exc)
+
+
 @router.post("/{repo_id}/ask", response_model=AskResponse)
 @_limiter.limit(_RATE_ASK)
 async def ask_repository(
@@ -137,6 +162,7 @@ async def ask_repository(
         context_entities=context_entities,
         final_context=final_context,
         db_session=db,
+        repo_id=repo_id,
     )
 
     # ── Citation correction (fix unsupported citations before returning) ──────
@@ -262,11 +288,24 @@ async def ask_repository(
                 _trace.step_turn_saved(role="assistant", turn_index=-1,
                                        conversation_id=body.conversation_id)
 
-            conversation_store.maybe_summarize(
-                conversation_id=body.conversation_id,
-                db=db,
-                llm_client=_llm_client,
-                trace=_trace,
+            # Run summarization in a background thread with its OWN session.
+            # The request db session must NOT be shared across threads —
+            # SQLAlchemy sessions are not thread-safe.
+            import asyncio as _asyncio
+            import os as _os
+            _db_url = _os.environ.get(
+                "DATABASE_URL",
+                "postgresql://postgres:postgres@127.0.0.1:5435/easyrepo",
+            )
+            _loop = _asyncio.get_running_loop()
+            _loop.run_in_executor(
+                None,
+                lambda: _run_summarize_in_own_session(
+                    conversation_id=body.conversation_id,
+                    db_url=_db_url,
+                    llm_client=_llm_client,
+                    trace=_trace,
+                )
             )
         except Exception as exc:
             # Do not re-raise — persistence failure must not break the response

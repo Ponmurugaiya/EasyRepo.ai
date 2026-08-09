@@ -189,7 +189,7 @@ def plan(query: str, repo_id: Optional[str] = None) -> QueryPlan:
 
         # Try primary: force fastest Groq model for minimal latency overhead
         try:
-            raw_response, _ = _llm.smart_complete(
+            raw_response, _, _, _ = _llm.smart_complete(
                 query=query,
                 context=user_message,
                 system_prompt=_PLANNER_SYSTEM,
@@ -200,7 +200,7 @@ def plan(query: str, repo_id: Optional[str] = None) -> QueryPlan:
             # Groq primary exhausted/unavailable — fall back to Gemini Flash-Lite.
             # Explicitly skip allam-2-7b (poor JSON compliance, very slow).
             # Skip other Groq models too — the planner needs reliable JSON output.
-            raw_response, _ = _llm.smart_complete(
+            raw_response, _, _, _ = _llm.smart_complete(
                 query=query,
                 context=user_message,
                 system_prompt=_PLANNER_SYSTEM,

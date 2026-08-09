@@ -380,8 +380,13 @@ def _call_model(
     context: str,
     api_key: Optional[str] = None,
     max_tokens: int = 8192,
-) -> str:
-    """Make one LiteLLM completion call and return the answer text."""
+) -> tuple[str, int, int]:
+    """Make one LiteLLM completion call.
+
+    Returns (answer_text, prompt_tokens, completion_tokens).
+    Token counts come from the response usage object — exact values from the
+    provider, not estimates.  Falls back to 0 if the provider omits usage.
+    """
     kwargs: dict = dict(
         model=model,
         messages=[
@@ -398,7 +403,13 @@ def _call_model(
     answer = response.choices[0].message.content
     if not answer:
         raise LLMProviderError(f"Model {model!r} returned an empty response.")
-    return answer
+
+    # Extract real token counts from the response usage object
+    usage = getattr(response, "usage", None)
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+
+    return answer, prompt_tokens, completion_tokens
 
 # ---------------------------------------------------------------------------
 # Primary public API: smart_complete
@@ -498,7 +509,7 @@ def smart_complete(
                 spec.model_id, spec.tier, estimated_tokens,
             )
             _record_request(spec.model_id)
-            answer = _call_model(
+            answer, prompt_tokens, completion_tokens = _call_model(
                 litellm,
                 model=spec.model_id,
                 system_prompt=system_prompt,
@@ -507,10 +518,11 @@ def smart_complete(
                 max_tokens=min(spec.max_output, 8192),
             )
             logger.info(
-                "Router: %s succeeded (%d chars, provider=%s)",
+                "Router: %s succeeded (%d chars, provider=%s, in=%d out=%d tok)",
                 spec.model_id, len(answer), spec.provider,
+                prompt_tokens, completion_tokens,
             )
-            return answer, spec.provider
+            return answer, spec.provider, prompt_tokens, completion_tokens
 
         except Exception as exc:
             err_msg = str(exc).lower()

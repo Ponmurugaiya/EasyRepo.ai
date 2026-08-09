@@ -27,12 +27,20 @@ interface ChatState {
   repoSessions: Record<string, RepoSession>;
   // Whether the sidebar is open
   sidebarOpen: boolean;
+  // Set to true when "New Chat" is clicked — causes the next repo pick from
+  // the WelcomeScreen to always start a fresh conversation instead of
+  // resuming the existing one.
+  newChatMode: boolean;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
   addRepoSession: (repo: RepositoryResponse) => void;
   updateRepoSession: (repoId: string, updates: Partial<RepoSession>) => void;
-  setActiveRepo: (repoId: string | null) => void;
+  /** Set the active repo. Pass forceNew=true to always start a fresh conversation. */
+  setActiveRepo: (repoId: string | null, forceNew?: boolean) => void;
+  /** Called by the "New Chat" button — navigates to WelcomeScreen and flags
+   *  the next repo pick to start a fresh conversation. */
+  startNewChat: () => void;
 
   startConversation: (repoId: string) => string; // returns conversationId
   getConversation: (repoId: string) => Conversation | undefined;
@@ -63,6 +71,7 @@ export const useChatStore = create<ChatState>()(
       activeRepoId: null,
       repoSessions: {},
       sidebarOpen: true,
+      newChatMode: false,
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
@@ -90,11 +99,15 @@ export const useChatStore = create<ChatState>()(
           },
         })),
 
-      setActiveRepo: (repoId) => {
-        set({ activeRepoId: repoId });
-        if (repoId && !get().conversations[repoId]) {
+      setActiveRepo: (repoId, forceNew = false) => {
+        set({ activeRepoId: repoId, newChatMode: false });
+        if (repoId && (forceNew || !get().conversations[repoId])) {
           get().startConversation(repoId);
         }
+      },
+
+      startNewChat: () => {
+        set({ activeRepoId: null, newChatMode: true });
       },
 
       startConversation: (repoId) => {

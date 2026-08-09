@@ -30,7 +30,7 @@ const FEATURES = [
 ];
 
 export function WelcomeScreen() {
-  const { repoSessions, setActiveRepo } = useChatStore();
+  const { repoSessions, setActiveRepo, newChatMode } = useChatStore();
   const repos = Object.values(repoSessions);
   const hasRepos = repos.length > 0;
 
@@ -56,7 +56,7 @@ export function WelcomeScreen() {
           {repos.map((repo) => (
             <button
               key={repo.repoId}
-              onClick={() => setActiveRepo(repo.repoId)}
+              onClick={() => setActiveRepo(repo.repoId, newChatMode)}
               disabled={repo.status !== "ready"}
               className="w-full flex items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-left hover:bg-zinc-700/60 hover:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
             >

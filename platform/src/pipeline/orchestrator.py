@@ -21,6 +21,7 @@ keep it a pure data-processing concern.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -45,6 +46,60 @@ logger = logging.getLogger(__name__)
 # Maximum re-retrieval iterations before forcing a best-effort answer.
 # Total LLM calls = 1 initial + _MAX_ITERATIONS re-retrieval = 3 calls max.
 _MAX_ITERATIONS = 2
+
+
+def _build_overview_context(
+    stm: "ShortTermMemory",
+    repo_id: str,
+    overview_answer: str,
+    db: Session,
+) -> "FinalContext":
+    """Build a real FinalContext for overview answers so citation validation works.
+
+    Queries the DB for all EntityModel rows whose id is in stm.visited_entity_ids,
+    wraps each in a minimal ExpandedContext, and calls build_context() to produce
+    a FinalContext with real entities.  Citation validation can then match citations
+    against these entities instead of seeing an empty list.
+    """
+    from src.storage.models import EntityModel as _EntityModel
+    from src.retrieval.models import RetrievalResult
+
+    expanded: list[ExpandedContext] = []
+    if stm.visited_entity_ids:
+        try:
+            entities = (
+                db.query(_EntityModel)
+                .filter(_EntityModel.id.in_(stm.visited_entity_ids))
+                .all()
+            )
+            for i, ent in enumerate(entities):
+                rr = RetrievalResult(
+                    entity_id=ent.id,
+                    entity=ent,
+                    score=1.0,
+                    rank=i + 1,
+                )
+                expanded.append(ExpandedContext(core=rr))
+        except Exception as exc:
+            logger.warning("_build_overview_context: DB query failed: %s", exc)
+
+    if expanded:
+        return build_context(
+            expanded_contexts=expanded,
+            query=stm.goal,
+            repo_id=repo_id,
+        )
+
+    # Fallback: minimal context with empty expanded list but real rendered text
+    from src.retrieval.models import FinalContext as _FC
+    return _FC(
+        query=stm.goal,
+        repo_id=repo_id,
+        expanded_contexts=[],
+        rendered_text=overview_answer,
+        total_tokens_est=len(overview_answer) // 4,
+        truncated=False,
+    )
 
 
 @dataclass
@@ -215,24 +270,21 @@ async def run_pipeline(
             )
             trace.step_stm("post-expand", stm)
             trace.step_stm("final", stm)
-            # Build a minimal FinalContext so ask.py can run citation validation
-            from src.retrieval.models import FinalContext as _FC
-            empty_context = _FC(
-                query=query,
-                repo_id=repo_id,
-                expanded_contexts=[],
-                rendered_text=overview_answer,
-                total_tokens_est=len(overview_answer) // 4,
-                truncated=False,
-            )
+            # Build a real FinalContext so ask.py can run citation validation
+            # against the entities visited during the overview pipeline.
+            real_context = _build_overview_context(stm, repo_id, overview_answer, db)
             return PipelineResult(
                 stm=stm,
-                final_context=empty_context,
+                final_context=real_context,
                 provider_used="gemini",
                 trace=trace,
             )
         except Exception as exc:
             logger.error("Overview pipeline failed, falling back to semantic search: %s", exc)
+            # Reset intent/strategy so the standard pipeline runs correctly
+            stm.intent = "query"
+            stm.retrieval_strategy = "semantic_search"
+            stm.search_query = query
             # Fall through to standard pipeline
 
     if stm.retrieval_strategy == "repository_walk":
@@ -308,7 +360,8 @@ async def run_pipeline(
                     total_tokens_est=len(injected_text) // 4,
                     truncated=final_context.truncated,
                 )
-                trace.step_ltm(hit=True, feature_name=ltm_entry.feature_name)
+                trace.step_ltm(hit=True, feature_name=ltm_entry.feature_name,
+                               ltm_summary=ltm_entry.summary)
             else:
                 trace.step_ltm(hit=False)
         except Exception as exc:
@@ -320,7 +373,7 @@ async def run_pipeline(
     # ── 6. Answer Agent loop ─────────────────────────────────────────────────
     system_prompt = build_system_prompt()
 
-    from src.generation import answer_agent
+    from src.generation import code_qa_agent
     from src.retrieval.targeted_retrieval import fetch as targeted_fetch
 
     provider_used = "unknown"
@@ -344,25 +397,29 @@ async def run_pipeline(
         import time as _time
         _llm_t0 = _time.monotonic()
 
-        agent_response = answer_agent.run(
-            query=query,
-            context=context_str,
-            system_prompt=system_prompt,
-            groq_model=groq_model,
-            groq_api_key=groq_api_key,
-            gemini_model=gemini_model,
-            gemini_api_key=gemini_api_key,
-            skip_groq=skip_groq,
-            skip_gemini=skip_gemini,
-            history_text=history_text,
-            iteration=attempt,
+        loop = asyncio.get_running_loop()
+        agent_response = await loop.run_in_executor(
+            None,
+            lambda: code_qa_agent.run(
+                query=query,
+                context=context_str,
+                system_prompt=system_prompt,
+                groq_model=groq_model,
+                groq_api_key=groq_api_key,
+                gemini_model=gemini_model,
+                gemini_api_key=gemini_api_key,
+                skip_groq=skip_groq,
+                skip_gemini=skip_gemini,
+                history_text=history_text,
+                iteration=attempt,
+            )
         )
 
         _llm_ms = (_time.monotonic() - _llm_t0) * 1000
         provider_used = agent_response.provider_used
         stm.answer_status = agent_response.status
 
-        # Log raw LLM response
+        # Log raw LLM response with real token counts from the agent response
         raw_out = agent_response.raw_response or agent_response.answer or ""
         trace.step_llm_response(
             provider=provider_used,
@@ -370,6 +427,7 @@ async def run_pipeline(
             answer_raw=raw_out,
             status=agent_response.status,
             elapsed_ms=_llm_ms,
+            input_tokens=agent_response.prompt_tokens,
         )
 
         if agent_response.status == "answered":
@@ -384,6 +442,7 @@ async def run_pipeline(
                         feature_name=agent_response.ltm_entry.get("feature_name", "unknown"),
                         confidence=agent_response.ltm_entry.get("confidence", "medium"),
                         exploration_status=agent_response.ltm_entry.get("exploration_status", "partial"),
+                        summary=agent_response.ltm_entry.get("summary"),
                     )
                 except Exception as exc:
                     logger.warning("LTM write failed: %s", exc)
@@ -404,7 +463,10 @@ async def run_pipeline(
             break
 
         # Re-retrieval pass
-        new_expanded = targeted_fetch(stm, agent_response, repo_id, db)
+        new_expanded = await loop.run_in_executor(
+            None,
+            lambda: targeted_fetch(stm, agent_response, repo_id, db)
+        )
         new_count = len(new_expanded) if new_expanded else 0
         reason = agent_response.reason or agent_response.status
         trace.step_reretrieval(attempt + 1, new_count, reason)

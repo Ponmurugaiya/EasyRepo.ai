@@ -199,7 +199,7 @@ def _ranges_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _collect_graph_relationships(final_context=None, db_session=None) -> dict[str, set[tuple[str, str]]]:
+def _collect_graph_relationships(final_context=None, db_session=None, repo_id=None) -> dict[str, set[tuple[str, str]]]:
     """Build sets of valid (source_id, target_id) edges grouped by relationship type.
 
     Returns a dict keyed by relationship type string (e.g. "CALLS", "IMPORTS",
@@ -227,6 +227,8 @@ def _collect_graph_relationships(final_context=None, db_session=None) -> dict[st
         from src.storage.models import RelationshipModel
 
         stmt = select(RelationshipModel)
+        if repo_id:
+            stmt = stmt.where(RelationshipModel.repo_id == repo_id)
         rels = db_session.scalars(stmt).all()
         for r in rels:
             if r.source_id and r.target_id:
@@ -239,9 +241,9 @@ def _collect_graph_relationships(final_context=None, db_session=None) -> dict[st
 
 
 # Keep the old name as a shim for any code that imported it directly
-def _collect_graph_calls(final_context=None, db_session=None) -> set[tuple[str, str]]:
+def _collect_graph_calls(final_context=None, db_session=None, repo_id=None) -> set[tuple[str, str]]:
     """Legacy shim — returns only CALLS edges. Use _collect_graph_relationships instead."""
-    rel_map = _collect_graph_relationships(final_context, db_session)
+    rel_map = _collect_graph_relationships(final_context, db_session, repo_id=repo_id)
     return rel_map.get("CALLS", set())
 
 
@@ -296,6 +298,7 @@ def validate_citations(
     context_entities: "list[EntityModel]",
     final_context=None,
     db_session=None,
+    repo_id=None,
 ) -> ValidationReport:
     """Validate every citation in *answer* using 3-way classification.
 
@@ -338,8 +341,8 @@ def validate_citations(
         if ent.type in ("function", "method", "class"):
             known_methods.setdefault(ent.name, []).append(ent)
 
-    # Graph relationship map (all types)
-    graph_rels = _collect_graph_relationships(final_context, db_session)
+    # Graph relationship map (all types), filtered by repo_id
+    graph_rels = _collect_graph_relationships(final_context, db_session, repo_id=repo_id)
     graph_calls = graph_rels.get("CALLS", set())
 
     for raw, file_path, start_line, end_line, preceding_text in unique_citations:
@@ -393,8 +396,8 @@ def validate_citations(
         is_def_citation = (
             not named_symbol
             or named_symbol == matched.name
-            or named_symbol in matched.id
-            or (matched.parent_id and named_symbol in matched.parent_id)
+            or named_symbol == matched.id.split(".")[-1]
+            or (matched.parent_id and named_symbol == matched.parent_id.split(".")[-1])
         )
 
         if is_def_citation:

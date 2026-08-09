@@ -114,6 +114,9 @@ def _setup_file_logging() -> None:
         debug_handler.setLevel(logging.DEBUG)
         debug_handler.setFormatter(fmt)
         root.addHandler(debug_handler)
+        # Lower the root logger level to DEBUG so DEBUG records reach handlers.
+        # Without this, basicConfig(level=INFO) prevents DEBUG from passing.
+        root.setLevel(logging.DEBUG)
         logger.info("File logging: debug.log enabled (PIPELINE_LOG_LEVEL=DEBUG)")
 
     logger.info(

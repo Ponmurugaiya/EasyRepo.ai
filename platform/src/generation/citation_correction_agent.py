@@ -112,7 +112,8 @@ def _deterministic_pass(
             correct_tag = _parse_nearest_entity_tag(mismatch.nearest_entity)
 
         if correct_tag and mismatch.raw in corrected:
-            corrected = corrected.replace(mismatch.raw, correct_tag, 1)
+            # Replace ALL occurrences of the bad tag, not just the first
+            corrected = corrected.replace(mismatch.raw, correct_tag)
             replacements += 1
             logger.debug(
                 "Correction (deterministic): %s → %s",
@@ -175,7 +176,7 @@ def _llm_correction_pass(
         )
 
         try:
-            corrected_paragraph, _ = _llm.smart_complete(
+            corrected_paragraph, _, _, _ = _llm.smart_complete(
                 query="Fix the invalid citation in this paragraph.",
                 context=context,
                 system_prompt=_CORRECTION_SYSTEM,

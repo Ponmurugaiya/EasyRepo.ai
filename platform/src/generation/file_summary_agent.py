@@ -84,34 +84,43 @@ def summarize_file(
 
     Returns
     -------
-    str
-        2-4 sentence summary with inline [file:line-line] citations.
-        Returns a minimal fallback string on any LLM failure.
+    tuple[str, int, int]
+        (summary_text, prompt_tokens, completion_tokens).
+        Falls back to a placeholder string and (0, 0) on any LLM failure.
     """
     try:
         import src.generation.llm_client as _llm
+        from src.generation.llm_client import LLMProviderError
 
         context = _build_context(file_path, source, entities)
         query = f"Summarise the file `{file_path}`."
 
-        summary, _ = _llm.smart_complete(
-            query=query,
-            context=context,
-            system_prompt=_SYSTEM_PROMPT,
-            task_type="fast",
-            force_model="groq/llama-3.1-8b-instant",
-        )
-        return summary.strip()
+        try:
+            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+                query=query,
+                context=context,
+                system_prompt=_SYSTEM_PROMPT,
+                task_type="fast",
+                force_model="groq/llama-3.1-8b-instant",
+            )
+        except LLMProviderError:
+            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+                query=query,
+                context=context,
+                system_prompt=_SYSTEM_PROMPT,
+                task_type="fast",
+                force_provider="gemini",
+            )
+        return summary.strip(), prompt_tokens, completion_tokens
 
     except Exception as exc:
-        # Log but don't crash — return a minimal placeholder so the overview
-        # pipeline can continue with other files.
         logger.warning("file_summary_agent: failed for %s: %s", file_path, exc)
         entity_names = ", ".join(
             e.name for e in entities[:5]
             if e.type in ("function", "class", "method")
         )
-        return (
+        fallback = (
             f"`{file_path}` — summary unavailable. "
             + (f"Contains: {entity_names}." if entity_names else "")
         )
+        return fallback, 0, 0

@@ -121,6 +121,7 @@ def save_turn(
                 repo_id=repo_id,
                 created_at=now,
                 updated_at=now,
+                summarized_through_turn=0,
             )
             db.add(conv)
             db.flush()  # so we can use conv in the turn below
@@ -159,15 +160,16 @@ def maybe_summarize(
 ) -> None:
     """Compress old turns into a rolling summary when the threshold is exceeded.
 
-    Runs synchronously after the response is returned so it never adds latency
-    to the current request.  Any failure is caught and logged silently.
+    IMPORTANT: This function must be called with its own dedicated DB session,
+    NOT the request session — it may be dispatched to a thread pool and
+    SQLAlchemy sessions are not thread-safe.
 
     Parameters
     ----------
     conversation_id:
         Target conversation UUID.
     db:
-        Active database session.
+        A dedicated database session (NOT the FastAPI request session).
     llm_client:
         The llm_client module (passed to avoid circular imports).
     trace:
@@ -223,7 +225,7 @@ def maybe_summarize(
         )
 
         try:
-            new_summary, _ = llm_client.generate_answer_with_fallback(
+            new_summary, _, _, _ = llm_client.generate_answer_with_fallback(
                 query="Summarize this conversation",
                 context=condensation_input,
                 system_prompt=system_prompt,

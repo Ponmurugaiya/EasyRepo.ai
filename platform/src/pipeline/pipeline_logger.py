@@ -76,13 +76,7 @@ class PipelineTrace:
     # ── STM snapshots ─────────────────────────────────────────────────────────
 
     def step_stm(self, stage: str, stm: "ShortTermMemory") -> None:
-        """Log a snapshot of STM state at a named pipeline stage.
-
-        At INFO level: key scalar fields only (goal, intent, strategy, status,
-        iteration count, entity/chunk counts).
-        At DEBUG level: full STM dump including visited entity IDs and
-        intermediate summaries.
-        """
+        """Log STM state at INFO (key scalars) and DEBUG (full content dump)."""
         _log(logging.INFO,
              "PIPELINE [STM@%s]  intent=%s  strategy=%s  search_query=%r  "
              "visited=%d  chunks=%d  iterations=%d  status=%s  answer_chars=%s",
@@ -96,11 +90,10 @@ class PipelineTrace:
              stm.answer_status,
              len(stm.answer_text or ""),
         )
-        if _pipeline_level() is not None and _pipeline_level() <= logging.DEBUG:
+        level = _pipeline_level()
+        if level is not None and level <= logging.DEBUG:
             import json as _json
             try:
-                summaries_preview = [s[:200] for s in stm.intermediate_summaries]
-                visited_preview = sorted(stm.visited_entity_ids)[:20]
                 detail = {
                     "goal": stm.goal[:200],
                     "intent": stm.intent,
@@ -108,24 +101,26 @@ class PipelineTrace:
                     "search_query": stm.search_query,
                     "session_id": stm.session_id,
                     "conversation_id": stm.conversation_id,
-                    "visited_entity_ids_sample": visited_preview,
+                    "visited_entity_ids_sample": sorted(stm.visited_entity_ids)[:20],
                     "visited_count": len(stm.visited_entity_ids),
                     "pending_count": len(stm.pending_entity_ids),
                     "chunks_count": len(stm.retrieved_chunks),
-                    "intermediate_summaries": summaries_preview,
+                    "intermediate_summaries": [s[:200] for s in stm.intermediate_summaries],
+                    "file_summaries_count": len(getattr(stm, "file_summaries", {})),
+                    "folder_summaries_count": len(getattr(stm, "folder_summaries", {})),
                     "answer_status": stm.answer_status,
-                    "answer_text_preview": (stm.answer_text or "")[:300],
+                    "answer_text": (stm.answer_text or "")[:_DEBUG_PREVIEW],
                     "missing": stm.missing,
                     "rewrite_query": stm.rewrite_query,
                     "iteration_count": stm.iteration_count,
                 }
                 logger.debug(
-                    "PIPELINE [STM@%s DETAIL]\n%s",
+                    "PIPELINE [STM@%s FULL]\n%s",
                     stage,
                     _json.dumps(detail, indent=2, default=str),
                 )
             except Exception:
-                pass  # never let logging break the pipeline
+                pass
 
 
 
@@ -149,11 +144,14 @@ class PipelineTrace:
              (conversation_id or "")[:16], self._elapsed())
 
     def step_history_debug(self, history_text: str) -> None:
-        """Log full conversation history text at DEBUG level."""
+        """Log full conversation history exactly as injected into the prompt."""
         if _pipeline_level() is None or _pipeline_level() > logging.DEBUG:
             return
         logger.debug(
-            "PIPELINE [0-HISTORY TEXT] (%d chars)\n%s",
+            "PIPELINE [0-HISTORY TEXT]  chars=%d\n"
+            "════════════════════════════════════════════════════\n"
+            "%s\n"
+            "════════════════════════════════════════════════════",
             len(history_text),
             history_text[:_DEBUG_PREVIEW],
         )
@@ -192,17 +190,31 @@ class PipelineTrace:
 
     def step_ltm_read(
         self,
-        outcome: str,         # "hit" | "miss" | "stale" | "skipped"
+        outcome: str,
         feature_name: Optional[str] = None,
         reason: Optional[str] = None,
-        step: int = 4,        # pipeline step number for the log prefix
+        step: int = 4,
+        ltm_summary: Optional[str] = None,   # full LTM content when hit
     ) -> None:
-        """Unified LTM read log — INFO for hit/stale, DEBUG for miss/skipped."""
+        """Unified LTM read log — INFO for hit/stale, DEBUG for miss/skipped.
+        At DEBUG level logs the full LTM summary content when it's a cache hit.
+        """
         label = f"{step}-LTM READ"
         if outcome == "hit":
             _log(logging.INFO,
                  "PIPELINE [%s]  outcome=hit  feature=%s  elapsed=%s",
                  label, feature_name, self._elapsed())
+            if ltm_summary:
+                level = _pipeline_level()
+                if level is not None and level <= logging.DEBUG:
+                    logger.debug(
+                        "PIPELINE [%s CONTENT]  feature=%s\n"
+                        "════════════════════════════════════════════════════\n"
+                        "%s\n"
+                        "════════════════════════════════════════════════════",
+                        label, feature_name,
+                        ltm_summary[:_DEBUG_PREVIEW],
+                    )
         elif outcome == "stale":
             _log(logging.INFO,
                  "PIPELINE [%s]  outcome=stale  feature=%s  reason=%s  elapsed=%s",
@@ -213,10 +225,12 @@ class PipelineTrace:
                  label, outcome, self._elapsed())
 
     # Keep old name as alias so existing orchestrator callers still work
-    def step_ltm(self, hit: bool, feature_name: Optional[str] = None) -> None:
+    def step_ltm(self, hit: bool, feature_name: Optional[str] = None,
+                 ltm_summary: Optional[str] = None) -> None:
         self.step_ltm_read(
             outcome="hit" if hit else "miss",
             feature_name=feature_name,
+            ltm_summary=ltm_summary,
         )
 
     def step_ltm_write(
@@ -224,12 +238,24 @@ class PipelineTrace:
         feature_name: str,
         confidence: str,
         exploration_status: str,
-        step: int = 4,        # pipeline step number for the log prefix
+        step: int = 4,
+        summary: Optional[str] = None,   # the summary content being written
     ) -> None:
-        """Log when LTM knowledge is written after an answered response."""
+        """Log when LTM knowledge is written. Dumps summary content at DEBUG."""
         _log(logging.INFO,
              "PIPELINE [%d-LTM WRITE]  feature=%s  confidence=%s  status=%s  elapsed=%s",
              step, feature_name, confidence, exploration_status, self._elapsed())
+        if summary:
+            level = _pipeline_level()
+            if level is not None and level <= logging.DEBUG:
+                logger.debug(
+                    "PIPELINE [%d-LTM WRITE CONTENT]  feature=%s\n"
+                    "════════════════════════════════════════════════════\n"
+                    "%s\n"
+                    "════════════════════════════════════════════════════",
+                    step, feature_name,
+                    summary[:_DEBUG_PREVIEW],
+                )
 
     # ── Step 5 — LLM dispatch + response ─────────────────────────────────────
 
@@ -241,39 +267,58 @@ class PipelineTrace:
         context_tokens: int,
         task_type: str,
     ) -> None:
-        """Log which model/provider was selected and with how many tokens BEFORE the call."""
+        """Log LLM dispatch: model, provider, input token count, delay from pipeline start."""
+        delay_ms = (time.monotonic() - self._start) * 1000
         _log(logging.INFO,
              "PIPELINE [5-DISPATCH]  attempt=%d  model=%s  provider=%s  "
-             "ctx_tokens=%d  task=%s  elapsed=%s",
-             attempt, model, provider, context_tokens, task_type, self._elapsed())
+             "input_tokens=%d  task=%s  delay_ms=%.0f",
+             attempt, model, provider, context_tokens, task_type, delay_ms)
 
     def step_llm_prompt(self, system_prompt: str, context: str) -> None:
-        """Log full prompts — only emitted at DEBUG level."""
+        """Log full prompts exactly as sent — only emitted at DEBUG level."""
         if _pipeline_level() is None or _pipeline_level() > logging.DEBUG:
             return
         logger.debug(
-            "PIPELINE [5-LLM PROMPT]\n"
-            "── SYSTEM PROMPT (%d chars) ──────────────────────\n%s\n"
-            "── USER CONTEXT (%d chars) ───────────────────────\n%s\n"
-            "──────────────────────────────────────────────────",
-            len(system_prompt), system_prompt[:_DEBUG_PREVIEW],
-            len(context), context[:_DEBUG_PREVIEW],
+            "PIPELINE [5-LLM PROMPT]  system_chars=%d  context_chars=%d\n"
+            "════════════ SYSTEM PROMPT ════════════\n"
+            "%s\n"
+            "════════════ USER CONTEXT ════════════\n"
+            "%s\n"
+            "═══════════════════════════════════════",
+            len(system_prompt), len(context),
+            system_prompt[:_DEBUG_PREVIEW],
+            context[:_DEBUG_PREVIEW],
         )
 
     def step_llm_response(self, provider: str, model: str, answer_raw: str,
-                          status: str, elapsed_ms: float) -> None:
-        preview = answer_raw[:_INFO_PREVIEW].replace("\n", " ")
+                          status: str, elapsed_ms: float,
+                          input_tokens: int = 0) -> None:
+        """Log LLM response with full token counts and timing.
+
+        Parameters
+        ----------
+        input_tokens:
+            Number of input tokens sent (pass from dispatch context).
+            Estimated as len(system+context)//4 when exact count unavailable.
+        """
+        output_tokens = len(answer_raw) // 4
         _log(logging.INFO,
-             "PIPELINE [5-LLM RESP]  provider=%s  model=%s  "
-             "status=%s  chars=%d  preview=%r  llm_ms=%.0f",
-             provider, model, status, len(answer_raw), preview, elapsed_ms)
-        if _pipeline_level() is not None and _pipeline_level() <= logging.DEBUG:
+             "PIPELINE [5-LLM RESP]  provider=%s  model=%s  status=%s  "
+             "input_tokens=%d  output_tokens=%d  response_ms=%.0f",
+             provider, model, status,
+             input_tokens, output_tokens, elapsed_ms)
+        # DEBUG: full output as-is (multi-line preserved)
+        level = _pipeline_level()
+        if level is not None and level <= logging.DEBUG:
             logger.debug(
-                "PIPELINE [5-LLM RAW] (%d chars)\n%s",
-                len(answer_raw),
+                "PIPELINE [5-LLM OUTPUT]  provider=%s  model=%s  "
+                "input_tokens=%d  output_tokens=%d  response_ms=%.0f\n"
+                "════════════════════════════════════════════════════\n"
+                "%s\n"
+                "════════════════════════════════════════════════════",
+                provider, model, input_tokens, output_tokens, elapsed_ms,
                 answer_raw[:_DEBUG_PREVIEW],
             )
-
     # ── Re-retrieval ──────────────────────────────────────────────────────────
 
     def step_reretrieval(self, attempt: int, new_entities: int,
@@ -337,24 +382,51 @@ class PipelineTrace:
     def step_file_agent(
         self,
         file_path: str,
-        tokens: int,
-        elapsed_ms: float,
+        tokens: int,         # input tokens (source size estimate)
+        elapsed_ms: float,   # response time for this file's LLM call
         from_cache: bool = False,
+        summary: Optional[str] = None,
     ) -> None:
+        output_tokens = len(summary) // 4 if summary else 0
         _log(logging.INFO,
-             "PIPELINE [FILE-AGENT]  file=%s  tokens=%d  elapsed=%.0fms  cache=%s",
-             file_path, tokens, elapsed_ms, from_cache)
+             "PIPELINE [FILE-AGENT]  file=%s  input_tokens=%d  output_tokens=%d  "
+             "response_ms=%.0f  cache=%s",
+             file_path, tokens, output_tokens, elapsed_ms, from_cache)
+        if summary:
+            level = _pipeline_level()
+            if level is not None and level <= logging.DEBUG:
+                logger.debug(
+                    "PIPELINE [FILE-AGENT SUMMARY]  file=%s\n"
+                    "════════════════════════════════════════════════════\n"
+                    "%s\n"
+                    "════════════════════════════════════════════════════",
+                    file_path, summary[:_DEBUG_PREVIEW],
+                )
 
     def step_folder_agent(
         self,
         folder: str,
         file_count: int,
-        elapsed_ms: float,
+        elapsed_ms: float,   # response time for this folder's LLM call
         from_cache: bool = False,
+        summary: Optional[str] = None,
+        input_tokens: int = 0,
     ) -> None:
+        output_tokens = len(summary) // 4 if summary else 0
         _log(logging.INFO,
-             "PIPELINE [FOLDER-AGENT]  folder=%s  files=%d  elapsed=%.0fms  cache=%s",
-             folder, file_count, elapsed_ms, from_cache)
+             "PIPELINE [FOLDER-AGENT]  folder=%s  files=%d  input_tokens=%d  "
+             "output_tokens=%d  response_ms=%.0f  cache=%s",
+             folder, file_count, input_tokens, output_tokens, elapsed_ms, from_cache)
+        if summary:
+            level = _pipeline_level()
+            if level is not None and level <= logging.DEBUG:
+                logger.debug(
+                    "PIPELINE [FOLDER-AGENT SUMMARY]  folder=%s\n"
+                    "════════════════════════════════════════════════════\n"
+                    "%s\n"
+                    "════════════════════════════════════════════════════",
+                    folder, summary[:_DEBUG_PREVIEW],
+                )
 
     def step_overview_assembled(
         self,

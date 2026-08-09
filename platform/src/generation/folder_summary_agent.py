@@ -52,29 +52,39 @@ def summarize_folder(folder: str, file_summaries: dict[str, str]) -> str:
 
     Returns
     -------
-    str
-        3-5 sentence folder summary with preserved inline citations.
-        Returns a minimal fallback on LLM failure.
+    tuple[str, int, int]
+        (summary_text, prompt_tokens, completion_tokens).
+        Falls back to a minimal string and (0, 0) on LLM failure.
     """
     if not file_summaries:
-        return f"`{folder}` — no files found."
+        return f"`{folder}` — no files found.", 0, 0
 
     try:
         import src.generation.llm_client as _llm
+        from src.generation.llm_client import LLMProviderError
 
         context = _build_context(folder, file_summaries)
         query = f"Summarise the `{folder}` folder."
 
-        summary, _ = _llm.smart_complete(
-            query=query,
-            context=context,
-            system_prompt=_SYSTEM_PROMPT,
-            task_type="fast",
-            force_model="groq/llama-3.1-8b-instant",
-        )
-        return summary.strip()
+        try:
+            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+                query=query,
+                context=context,
+                system_prompt=_SYSTEM_PROMPT,
+                task_type="fast",
+                force_model="groq/llama-3.1-8b-instant",
+            )
+        except LLMProviderError:
+            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+                query=query,
+                context=context,
+                system_prompt=_SYSTEM_PROMPT,
+                task_type="fast",
+                force_provider="gemini",
+            )
+        return summary.strip(), prompt_tokens, completion_tokens
 
     except Exception as exc:
         logger.warning("folder_summary_agent: failed for %s: %s", folder, exc)
         file_names = ", ".join(f"`{fp}`" for fp in list(file_summaries.keys())[:5])
-        return f"`{folder}` contains {len(file_summaries)} files: {file_names}."
+        return f"`{folder}` contains {len(file_summaries)} files: {file_names}.", 0, 0

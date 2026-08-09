@@ -75,15 +75,17 @@ def lookup(
                          repo_id, session_id, intent)
             return None
 
-        # Stale detection: discard if repo was re-indexed after LTM was written
-        if repo.indexed_at and entry.repo_indexed_at:
-            if repo.indexed_at > entry.repo_indexed_at:
-                logger.info(
-                    "LTM cache stale: repo re-indexed at %s, entry written at %s — discarding.",
-                    repo.indexed_at,
-                    entry.repo_indexed_at,
-                )
-                return None
+        # Stale detection: entry with no recorded index time is unsafe — treat as stale
+        if entry.repo_indexed_at is None:
+            logger.debug("LTM entry has no repo_indexed_at — treating as stale")
+            return None
+        if repo.indexed_at and repo.indexed_at > entry.repo_indexed_at:
+            logger.info(
+                "LTM cache stale: repo re-indexed at %s, entry written at %s — discarding.",
+                repo.indexed_at,
+                entry.repo_indexed_at,
+            )
+            return None
 
         logger.info(
             "LTM cache hit: repo=%s session=%s feature=%s confidence=%s status=%s",
@@ -137,7 +139,7 @@ def write(
             created_at=datetime.now(timezone.utc),
         )
         db.add(record)
-        db.commit()
+        db.flush()
         logger.info(
             "LTM written: repo=%s session=%s feature=%s confidence=%s status=%s",
             repo_id,
@@ -148,7 +150,6 @@ def write(
         )
     except Exception as exc:
         logger.warning("LTM write failed: %s", exc)
-        db.rollback()
 
 
 def inject_ltm(final_context_text: str, ltm_entry: ConversationMemoryModel) -> str:
@@ -197,11 +198,13 @@ def lookup_by_feature(
         )
         if entry is None:
             return None
-        # Stale detection
-        if repo.indexed_at and entry.repo_indexed_at:
-            if repo.indexed_at > entry.repo_indexed_at:
-                logger.info("LTM stale (overview): feature=%s", feature_name)
-                return None
+        # Stale detection: entry with no recorded index time is unsafe
+        if entry.repo_indexed_at is None:
+            logger.debug("LTM entry has no repo_indexed_at (overview) — treating as stale")
+            return None
+        if repo.indexed_at and repo.indexed_at > entry.repo_indexed_at:
+            logger.info("LTM stale (overview): feature=%s", feature_name)
+            return None
         return entry
     except Exception as exc:
         logger.warning("LTM lookup_by_feature failed: %s", exc)
@@ -235,11 +238,10 @@ def write_feature(
             created_at=datetime.now(timezone.utc),
         )
         db.add(record)
-        db.commit()
+        db.flush()
         logger.info(
             "LTM written (overview): repo=%s feature=%s",
             repo_id, feature_name,
         )
     except Exception as exc:
         logger.warning("LTM write_feature failed: %s", exc)
-        db.rollback()
