@@ -1,26 +1,23 @@
-"""Vector similarity search against entity embeddings in PostgreSQL/pgvector.
-
-Embeds a natural language query using the same model as ingestion
-(jinaai/jina-embeddings-v2-base-code) and executes cosine distance search.
-"""
+"""Vector similarity search against entity embeddings in PostgreSQL/pgvector."""
 
 from __future__ import annotations
 
 from typing import Optional
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.embedding.embedder import CodeEmbedder
 from src.storage.models import EntityModel
 from src.retrieval.models import RetrievalResult
 
-# Global embedder instance singleton (lazy loaded internally by CodeEmbedder)
-_embedder: Optional[CodeEmbedder] = None
+# Lazy singleton — not created until first search call so tests that
+# mock the DB can import this module without triggering a voyageai network call.
+_embedder = None
 
 
-def get_embedder() -> CodeEmbedder:
+def get_embedder():
     global _embedder
     if _embedder is None:
+        from src.embedding.embedder import CodeEmbedder  # lazy import
         _embedder = CodeEmbedder()
     return _embedder
 

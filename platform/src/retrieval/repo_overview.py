@@ -58,7 +58,7 @@ async def _summarize_files_async(
     Populates stm.file_summaries and stm.visited_entity_ids in-place.
     Skips files already present in stm.file_summaries (loaded from LTM).
     """
-    from src.generation.file_summary_agent import summarize_file
+    from src.agents.file_summary_agent import summarize_file
 
     files_to_process = [
         (fp, source, entities)
@@ -175,13 +175,16 @@ async def run(
     str
         Final answer text with inline citations.
     """
-    from src.storage import ltm_store
+    from src.memory.ltm.session_knowledge import (
+        lookup_by_feature,
+        write_feature,
+    )
 
     ltm_feature = "repo_overview" if intent == "repository_overview" else "repo_detailed"
 
     # ── Step 1: LTM full-repo cache check ────────────────────────────────────
     if session_id:
-        cached = ltm_store.lookup_by_feature(repo_id, session_id, ltm_feature, repo, db)
+        cached = lookup_by_feature(repo_id, session_id, ltm_feature, repo, db)
         if cached:
             stm.overview_from_cache = True
             if trace:
@@ -206,7 +209,7 @@ async def run(
     if session_id:
         for folder in list(folders.keys()):
             folder_feature = f"folder:{folder}"
-            cached_folder = ltm_store.lookup_by_feature(
+            cached_folder = lookup_by_feature(
                 repo_id, session_id, folder_feature, repo, db
             )
             if cached_folder:
@@ -229,7 +232,7 @@ async def run(
     await _summarize_files_async(file_entity_map, repo_id, stm, trace)
 
     # ── Step 5: Folder Agents for uncached folders ───────────────────────────
-    from src.generation.folder_summary_agent import summarize_folder
+    from src.agents.folder_summary_agent import summarize_folder
 
     for folder, file_paths in folders.items():
         if folder in stm.folder_summaries:
@@ -269,7 +272,7 @@ async def run(
                 for fp in file_paths
                 for ent in file_entity_map.get(fp, (None, []))[1]
             ]
-            ltm_store.write_feature(
+            write_feature(
                 repo_id=repo_id,
                 session_id=session_id,
                 feature_name=f"folder:{folder}",
@@ -295,7 +298,7 @@ async def run(
         )
 
     # ── Step 6: Repo Summary Agent ────────────────────────────────────────────
-    from src.generation.repo_summary_agent import summarize_repo
+    from src.agents.repo_summary_agent import summarize_repo
 
     try:
         answer, provider = summarize_repo(
@@ -323,7 +326,7 @@ async def run(
 
     # ── Step 7: Write repo-level LTM entry ───────────────────────────────────
     if session_id:
-        ltm_store.write_feature(
+        write_feature(
             repo_id=repo_id,
             session_id=session_id,
             feature_name=ltm_feature,

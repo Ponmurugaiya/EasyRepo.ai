@@ -1,10 +1,18 @@
-"""Compatibility shim — re-exports from code_qa_agent.
+"""Backward-compatibility shim.
 
-The canonical module is ``src.generation.code_qa_agent``.
-This shim keeps existing callers working without changes.
-It will be removed in a future cleanup pass.
+CodeQAAgent has moved to src.agents.code_qa_agent.
+answer_agent.py is a further alias kept for existing tests and callers.
+Import from src.agents.code_qa_agent directly going forward.
 """
+from src.agents.code_qa_agent import (  # noqa: F401
+    run,
+    QAResponse as AgentResponse,
+    QAResponse,
+    _extract_answer_json,
+    _build_augmented_system_prompt,
+)
 
-from src.generation.code_qa_agent import run, QAResponse as AgentResponse, QAResponse
-
-__all__ = ["run", "AgentResponse", "QAResponse"]
+__all__ = [
+    "run", "AgentResponse", "QAResponse",
+    "_extract_answer_json", "_build_augmented_system_prompt",
+]

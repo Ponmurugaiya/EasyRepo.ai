@@ -29,7 +29,7 @@ from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from src.pipeline.memory import ShortTermMemory
+from src.memory.stm.short_term import ShortTermMemory
 from src.pipeline.history_formatter import format_history, format_history_with_summary
 from src.pipeline.pipeline_logger import PipelineTrace
 from src.retrieval.models import ExpandedContext, FinalContext
@@ -195,10 +195,9 @@ async def run_pipeline(
     if user_id and conversation_id:
         # Authenticated: load from DB (summary only — no raw turns)
         try:
-            from src.storage import conversation_store
-            summary, recent_turns = conversation_store.load_history(
-                conversation_id, user_id, db
-            )
+            from src.memory.stm.working_memory import load_history
+            from src.pipeline.history_formatter import format_history_with_summary
+            summary, recent_turns = load_history(conversation_id, user_id, db)
             history_text = format_history_with_summary(summary, recent_turns)
             trace.step_history_load(
                 source="db",
@@ -232,14 +231,12 @@ async def run_pipeline(
     repo_user_memory_facts: list[dict] = []
     if user_id:
         try:
-            from src.storage import memory_store
-            user_memory_facts = memory_store.load_user_memory(user_id, db)
-            user_repo_pref_facts = memory_store.load_user_repo_preferences(
-                user_id, repo_id, db
-            )
-            repo_user_memory_facts = memory_store.load_repo_user_memory(
-                user_id, repo_id, db
-            )
+            from src.memory.ltm.user_memory import load_user_memory
+            from src.memory.ltm.user_repo_preference import load_user_repo_preferences
+            from src.memory.ltm.repo_user_memory import load_repo_user_memory
+            user_memory_facts = load_user_memory(user_id, db)
+            user_repo_pref_facts = load_user_repo_preferences(user_id, repo_id, db)
+            repo_user_memory_facts = load_repo_user_memory(user_id, repo_id, db)
             logger.debug(
                 "LTM loaded: user=%d user_repo=%d repo=%d facts",
                 len(user_memory_facts),
@@ -251,7 +248,7 @@ async def run_pipeline(
 
     # ── 2. Query Planner ─────────────────────────────────────────────────────
     try:
-        from src.generation.query_planner import plan
+        from src.agents.query_planner import plan
         query_plan = plan(query, repo_id=repo_id)
         stm.intent = query_plan.intent
         stm.retrieval_strategy = query_plan.retrieval_strategy
@@ -371,11 +368,11 @@ async def run_pipeline(
     ltm_hit = False
     if session_id:
         try:
-            from src.storage import ltm_store
-            ltm_entry = ltm_store.lookup(repo_id, session_id, stm.intent, repo, db)
+            from src.memory.ltm.session_knowledge import lookup as ltm_lookup, inject_ltm
+            ltm_entry = ltm_lookup(repo_id, session_id, stm.intent, repo, db)
             if ltm_entry:
                 ltm_hit = True
-                injected_text = ltm_store.inject_ltm(
+                injected_text = inject_ltm(
                     final_context.rendered_text, ltm_entry
                 )
                 final_context = FinalContext(
@@ -399,7 +396,7 @@ async def run_pipeline(
     # ── 6. Answer Agent loop ─────────────────────────────────────────────────
     system_prompt = build_system_prompt()
 
-    from src.generation import code_qa_agent
+    from src.agents import code_qa_agent
     from src.retrieval.targeted_retrieval import fetch as targeted_fetch
 
     provider_used = "unknown"
@@ -465,8 +462,8 @@ async def run_pipeline(
             # Write LTM if session scoped and agent provided an entry
             if session_id and agent_response.ltm_entry:
                 try:
-                    from src.storage import ltm_store
-                    ltm_store.write(repo_id, session_id, agent_response.ltm_entry, repo, db)
+                    from src.memory.ltm.session_knowledge import write as ltm_write
+                    ltm_write(repo_id, session_id, agent_response.ltm_entry, repo, db)
                     trace.step_ltm_write(
                         feature_name=agent_response.ltm_entry.get("feature_name", "unknown"),
                         confidence=agent_response.ltm_entry.get("confidence", "medium"),

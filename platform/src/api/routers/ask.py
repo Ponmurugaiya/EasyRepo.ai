@@ -59,9 +59,9 @@ def _run_summarize_in_own_session(
     """
     try:
         from src.storage.db import get_session
-        from src.storage import conversation_store
+        from src.memory.stm.working_memory import summarize_after_turn
         with get_session(db_url) as own_db:
-            conversation_store.summarize_after_turn(
+            summarize_after_turn(
                 conversation_id=conversation_id,
                 db=own_db,
                 llm_client=llm_client,
@@ -172,7 +172,7 @@ async def ask_repository(
     # ── Citation correction (fix unsupported citations before returning) ──────
     if report.unsupported_citations:
         try:
-            from src.generation.citation_correction_agent import run as correct_citations
+            from src.agents.citation_correction_agent import run as correct_citations
             correction = correct_citations(
                 answer=answer,
                 report=report,
@@ -264,11 +264,11 @@ async def ask_repository(
     # ── Persist conversation turns (authenticated users only) ─────────────────
     if current_user and body.conversation_id:
         try:
-            from src.storage import conversation_store
+            from src.memory.stm.working_memory import save_turn
             from src.generation import llm_client as _llm_client
             _trace = pipeline_result.trace
 
-            conversation_store.save_turn(
+            save_turn(
                 conversation_id=body.conversation_id,
                 user_id=current_user.id,
                 repo_id=repo_id,
@@ -280,7 +280,7 @@ async def ask_repository(
                 _trace.step_turn_saved(role="user", turn_index=-1,
                                        conversation_id=body.conversation_id)
 
-            conversation_store.save_turn(
+            save_turn(
                 conversation_id=body.conversation_id,
                 user_id=current_user.id,
                 repo_id=repo_id,

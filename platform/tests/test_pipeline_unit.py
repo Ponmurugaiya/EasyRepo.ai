@@ -263,7 +263,7 @@ class TestAnswerAgentRun:
     # so we patch it at its source module.
     @patch("src.generation.llm_client.generate_answer_with_fallback")
     def test_answered_status(self, mock_llm):
-        mock_llm.return_value = (self._make_answered_response(), "groq")
+        mock_llm.return_value = (self._make_answered_response(), "groq", 100, 50)
         resp = agent_run("How does auth work?", "context...", "sys prompt")
         assert resp.status == "answered"
         assert resp.answer == "It uses JWT."
@@ -273,7 +273,7 @@ class TestAnswerAgentRun:
 
     @patch("src.generation.llm_client.generate_answer_with_fallback")
     def test_insufficient_status(self, mock_llm):
-        mock_llm.return_value = (self._make_insufficient_response(), "groq")
+        mock_llm.return_value = (self._make_insufficient_response(), "groq", 100, 50)
         resp = agent_run("How does auth work?", "context...", "sys prompt")
         assert resp.status == "insufficient"
         assert resp.missing == {"type": "feature", "entity": "JWTService"}
@@ -282,7 +282,7 @@ class TestAnswerAgentRun:
 
     @patch("src.generation.llm_client.generate_answer_with_fallback")
     def test_rewrite_status(self, mock_llm):
-        mock_llm.return_value = (self._make_rewrite_response(), "groq")
+        mock_llm.return_value = (self._make_rewrite_response(), "groq", 100, 50)
         resp = agent_run("Auth?", "context...", "sys prompt")
         assert resp.status == "rewrite_search"
         assert resp.rewrite_query == "authentication service JWT validation"
@@ -292,14 +292,14 @@ class TestAnswerAgentRun:
         """Unknown status in JSON block must be treated as 'answered'."""
         payload = {"status": "hallucinated_status", "answer": "Some answer."}
         raw = f"<answer_json>\n{json.dumps(payload)}\n</answer_json>"
-        mock_llm.return_value = (raw, "groq")
+        mock_llm.return_value = (raw, "groq", 100, 50)
         resp = agent_run("query", "context", "sys")
         assert resp.status == "answered"
 
     @patch("src.generation.llm_client.generate_answer_with_fallback")
     def test_no_json_block_treated_as_answered(self, mock_llm):
         """If no <answer_json> block is found, treat the whole response as the answer."""
-        mock_llm.return_value = ("The auth service uses HMAC-SHA256.", "gemini")
+        mock_llm.return_value = ("The auth service uses HMAC-SHA256.", "gemini", 100, 50)
         resp = agent_run("query", "context", "sys")
         assert resp.status == "answered"
         assert resp.answer == "The auth service uses HMAC-SHA256."
@@ -560,23 +560,24 @@ class TestHistoryFormatter:
     def test_with_summary_only(self):
         result = format_history_with_summary("Prior context about auth.", [])
         assert "Prior context about auth." in result
-        assert "[Previous conversation summary]" in result
+        assert "[Conversation summary so far]" in result
 
     def test_with_recent_turns_only(self):
         turn = MagicMock()
         turn.role = "user"
         turn.content = "Follow up question"
+        # recent_turns is intentionally ignored — only the summary is used.
+        # With no summary, result is empty.
         result = format_history_with_summary(None, [turn])
-        assert "User: Follow up question" in result
-        assert "[Previous conversation summary]" not in result
+        assert result == ""
 
     def test_with_both_summary_and_turns(self):
         turn = MagicMock()
         turn.role = "assistant"
         turn.content = "Answer to follow up"
+        # recent_turns ignored — only summary injected into prompt
         result = format_history_with_summary("Summary of prior discussion.", [turn])
         assert "Summary of prior discussion." in result
-        assert "Assistant: Answer to follow up" in result
 
 
 # ── Schema backward compatibility ─────────────────────────────────────────────

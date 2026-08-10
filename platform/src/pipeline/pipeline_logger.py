@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.pipeline.memory import ShortTermMemory
+    from src.memory.stm.short_term import ShortTermMemory
 
 logger = logging.getLogger(__name__)
 
