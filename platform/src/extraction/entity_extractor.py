@@ -39,10 +39,10 @@ from src.languages import get_adapter, ADAPTER_REGISTRY
 from src.languages.base import LanguageAdapter
 
 
-# Languages not driven by adapters (no tree-sitter grammar needed)
-_PASSTHROUGH_LANGUAGES: dict[str, Language] = {
-    ".md": "markdown",
-}
+# Languages not driven by adapters (no tree-sitter grammar needed).
+# Markdown is intentionally excluded — doc files (.md) are not indexed
+# because they can be outdated and mislead the LLM during code Q&A.
+_PASSTHROUGH_LANGUAGES: dict[str, Language] = {}
 
 
 class EntityExtractor:
@@ -84,9 +84,6 @@ class EntityExtractor:
             parts = p.split("/")
             parts[-1] = parts[-1].replace(".", "_")
             return "ts." + ".".join(parts)
-        elif language == "markdown":
-            p_no_ext = os.path.splitext(p)[0]
-            return p_no_ext.replace("/", ".").lower()
         else:
             p_no_ext = os.path.splitext(p)[0]
             return p_no_ext.replace("/", ".").lower()

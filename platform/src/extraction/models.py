@@ -2,7 +2,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-Language = Literal["python", "typescript", "markdown"]
+Language = Literal["python", "typescript"]
 
 
 class Entity(BaseModel):
