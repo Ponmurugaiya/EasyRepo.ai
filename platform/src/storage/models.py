@@ -375,3 +375,121 @@ class ConversationTurnModel(Base):
         CheckConstraint("role IN ('user', 'assistant')", name="chk_turn_role"),
         Index("idx_turns_conv_index", "conversation_id", "turn_index"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Long-Term Memory — three-tier design
+# ---------------------------------------------------------------------------
+
+class UserMemoryModel(Base):
+    """ORM model for ``user_memory`` table.
+
+    Stores global facts about the user that apply across all repositories:
+    preferences, background, working style, stated expertise level, etc.
+
+    Keyed by user_id.  Facts are deduplicated at the application layer
+    (exact-match on ``fact`` before insert).
+    """
+
+    __tablename__ = "user_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # e.g. "preference", "background", "working_style"
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    fact: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_user_memory_user_id", "user_id"),
+    )
+
+
+class UserRepoPreferenceModel(Base):
+    """ORM model for ``user_repo_preferences`` table.
+
+    Stores facts about how this specific user works with this specific
+    repository — their habits, familiarity level, preferred areas, and
+    any stated context about their relationship to this codebase.
+
+    Keyed by (user_id, repo_id).
+    """
+
+    __tablename__ = "user_repo_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    repo_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False
+    )
+    # e.g. "familiarity", "focus_area", "role_in_project"
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    fact: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_urp_user_repo", "user_id", "repo_id"),
+    )
+
+
+class RepoUserMemoryModel(Base):
+    """ORM model for ``repo_user_memory`` table.
+
+    Stores facts about the codebase itself, discovered or confirmed through
+    this user's conversations.  Think of this as a per-user knowledge base
+    about the repo: known bugs, architectural decisions, confirmed behaviour.
+
+    Keyed by (user_id, repo_id).
+    """
+
+    __tablename__ = "repo_user_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    repo_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False
+    )
+    # e.g. "codebase_fact", "open_issue", "architectural_decision", "confirmed_behaviour"
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    fact: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_rum_user_repo", "user_id", "repo_id"),
+    )

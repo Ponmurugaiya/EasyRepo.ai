@@ -150,35 +150,45 @@ def summarize_after_turn(
     db: Session,
     llm_client,
     trace=None,
+    user_id: Optional[str] = None,
+    repo_id: Optional[str] = None,
 ) -> None:
-    """Eagerly compress all unsummarised turns into the rolling summary.
+    """Eagerly compress all unsummarised turns AND extract long-term memories.
 
-    Called after every completed Q&A exchange (user turn + assistant turn).
-    Unlike the old threshold-gated approach, this runs unconditionally so the
-    next request always receives a pure summary — no raw turns are ever carried
-    forward to the Answer Agent.
+    Single LLM call that does two things at once:
+      1. Produces a rolling conversation summary (injected on every future request)
+      2. Extracts long-term memory facts into three buckets:
+           - user_memory          : global user preferences/background
+           - user_repo_preferences: how this user works with this specific repo
+           - repo_memory          : facts about this repo learned in this conversation
 
     The rolling summary is cumulative:
-      • Q1 → summarize(Q1+A1)                        → summary_v1
-      • Q2 → summarize(summary_v1 + Q2+A2)           → summary_v2
-      • Q3 → summarize(summary_v2 + Q3+A3)           → summary_v3
+      • Q1 → summarize+extract(Q1+A1)                        → summary_v1
+      • Q2 → summarize+extract(summary_v1 + Q2+A2)           → summary_v2
       …
 
-    IMPORTANT: This function must be called with its own dedicated DB session,
-    NOT the request session — it is dispatched to a thread pool and SQLAlchemy
-    sessions are not thread-safe.
+    IMPORTANT: Must be called with its own dedicated DB session — dispatched
+    to a thread pool; SQLAlchemy sessions are not thread-safe.
 
     Parameters
     ----------
     conversation_id:
         Target conversation UUID.
     db:
-        A dedicated database session (NOT the FastAPI request session).
+        Dedicated database session (NOT the FastAPI request session).
     llm_client:
         The llm_client module (passed to avoid circular imports).
     trace:
         Optional PipelineTrace for structured logging.
+    user_id:
+        Authenticated user ID — required to persist memory facts.
+        If None, memory extraction is skipped.
+    repo_id:
+        Repository ID — required to persist repo-scoped memory facts.
+        If None, repo-scoped memory extraction is skipped.
     """
+    import json as _json
+
     try:
         conv: Optional[ConversationModel] = (
             db.query(ConversationModel)
@@ -188,7 +198,7 @@ def summarize_after_turn(
         if conv is None:
             return
 
-        # Load all turns that have not yet been incorporated into the summary.
+        # Load all turns not yet in the summary.
         unsummarised: list[ConversationTurnModel] = (
             db.query(ConversationTurnModel)
             .filter(
@@ -202,7 +212,6 @@ def summarize_after_turn(
         if not unsummarised:
             return
 
-        # Build exchange text from the new turns.
         new_turns_text = "\n".join(
             f"{t.role.upper()}: {t.content}" for t in unsummarised
         )
@@ -217,15 +226,28 @@ def summarize_after_turn(
             condensation_input = new_turns_text
 
         system_prompt = (
-            "You are a conversation summarizer for a codebase assistant. "
-            "Produce a compact paragraph (max 200 words) summarizing the topics discussed, "
-            "decisions made, and code areas referenced. Do NOT reproduce raw code blocks. "
-            "Focus on what was learned about the codebase."
+            "You are a memory manager for a codebase assistant. "
+            "Given a conversation exchange, you must return a single JSON object with four keys:\n\n"
+            "  \"summary\": A compact paragraph (max 200 words) summarizing topics discussed, "
+            "decisions made, and code areas referenced. Do NOT reproduce raw code blocks.\n\n"
+            "  \"user_memory\": A list of facts about the USER that are globally useful "
+            "(preferences, background, working style, expertise level). "
+            "Each item: {\"category\": \"preference|background|working_style\", \"fact\": \"...\"}.\n\n"
+            "  \"user_repo_preferences\": A list of facts about how THIS USER works with "
+            "THIS SPECIFIC REPO (their familiarity, focus areas, role in the project, "
+            "stated experience with this codebase). "
+            "Each item: {\"category\": \"familiarity|focus_area|role_in_project\", \"fact\": \"...\"}.\n\n"
+            "  \"repo_memory\": A list of facts about the CODEBASE ITSELF discovered or "
+            "confirmed in this conversation (architectural decisions, known bugs, confirmed "
+            "behaviour, tech choices). "
+            "Each item: {\"category\": \"codebase_fact|open_issue|architectural_decision|confirmed_behaviour\", \"fact\": \"...\"}.\n\n"
+            "Return ONLY the raw JSON object — no markdown fences, no prose, no explanation. "
+            "If a list has nothing to add, return an empty array []."
         )
 
         try:
-            new_summary, _, _, _ = llm_client.generate_answer_with_fallback(
-                query="Summarize this conversation",
+            raw_response, _, _, _ = llm_client.generate_answer_with_fallback(
+                query="Summarize and extract memories from this conversation",
                 context=condensation_input,
                 system_prompt=system_prompt,
                 groq_model="llama-3.1-8b-instant",
@@ -234,7 +256,34 @@ def summarize_after_turn(
             logger.warning("summarize_after_turn: LLM call failed: %s", llm_exc)
             return
 
-        # Advance the summarized_through pointer to the last turn just processed.
+        # Parse the JSON response.
+        parsed: Optional[dict] = None
+        try:
+            # Strip markdown fences if the model wrapped anyway
+            clean = raw_response.strip().strip("```json").strip("```").strip()
+            parsed = _json.loads(clean)
+        except _json.JSONDecodeError:
+            # Try extracting the first JSON object from the response
+            import re as _re
+            match = _re.search(r'\{.*\}', raw_response, _re.DOTALL)
+            if match:
+                try:
+                    parsed = _json.loads(match.group(0))
+                except _json.JSONDecodeError:
+                    pass
+
+        if not parsed:
+            logger.warning(
+                "summarize_after_turn: could not parse LLM JSON — raw: %.200s", raw_response
+            )
+            return
+
+        new_summary = parsed.get("summary", "").strip()
+        if not new_summary:
+            logger.warning("summarize_after_turn: LLM returned empty summary")
+            return
+
+        # Update the rolling conversation summary.
         last_turn_index = unsummarised[-1].turn_index
         conv.summary = new_summary
         conv.summarized_through_turn = last_turn_index
@@ -252,6 +301,27 @@ def summarize_after_turn(
                 turns_compressed=len(unsummarised),
                 summarized_through=last_turn_index,
             )
+
+        # Persist long-term memory facts if user context is available.
+        if user_id:
+            from src.storage import memory_store
+
+            user_facts = parsed.get("user_memory") or []
+            if user_facts:
+                memory_store.upsert_user_memory(user_id, user_facts, db)
+
+            if repo_id:
+                repo_pref_facts = parsed.get("user_repo_preferences") or []
+                if repo_pref_facts:
+                    memory_store.upsert_user_repo_preferences(
+                        user_id, repo_id, repo_pref_facts, db
+                    )
+
+                repo_facts = parsed.get("repo_memory") or []
+                if repo_facts:
+                    memory_store.upsert_repo_user_memory(
+                        user_id, repo_id, repo_facts, db
+                    )
 
     except Exception as exc:
         logger.warning("summarize_after_turn failed: %s", exc)

@@ -128,14 +128,47 @@ def _extract_answer_json(text: str) -> Optional[dict]:
     return _extract_any_json_with_status(text)
 
 
-def _build_augmented_system_prompt(system_prompt: str, history_text: str = "") -> str:
-    """Append the structured output addendum and optional conversation history."""
-    parts = [system_prompt, _STRUCTURED_OUTPUT_ADDENDUM]
+def _build_augmented_system_prompt(
+    system_prompt: str,
+    history_text: str = "",
+    user_memory: list[dict] | None = None,
+    user_repo_preferences: list[dict] | None = None,
+    repo_user_memory: list[dict] | None = None,
+) -> str:
+    """Append memory blocks, conversation history, and structured output addendum."""
+    parts = [system_prompt]
+
+    # ── Long-term memory block ────────────────────────────────────────────────
+    memory_sections = []
+
+    if user_memory:
+        lines = "\n".join(f"- [{m['category']}] {m['fact']}" for m in user_memory)
+        memory_sections.append(f"## User preferences & background\n{lines}")
+
+    if user_repo_preferences:
+        lines = "\n".join(f"- [{m['category']}] {m['fact']}" for m in user_repo_preferences)
+        memory_sections.append(f"## How this user works with this repo\n{lines}")
+
+    if repo_user_memory:
+        lines = "\n".join(f"- [{m['category']}] {m['fact']}" for m in repo_user_memory)
+        memory_sections.append(f"## Known facts about this codebase\n{lines}")
+
+    if memory_sections:
+        parts.append(
+            "\n# Long-term memory\n"
+            "The following facts have been remembered from past conversations. "
+            "Use them to personalize and improve your answer:\n\n"
+            + "\n\n".join(memory_sections)
+        )
+
+    # ── Conversation history ──────────────────────────────────────────────────
     if history_text:
         parts.append(
             f"\n# Conversation history\nUse this as context for follow-up questions:\n"
             f"<conversation_history>\n{history_text}\n</conversation_history>"
         )
+
+    parts.append(_STRUCTURED_OUTPUT_ADDENDUM)
     return "\n".join(parts)
 
 
@@ -151,6 +184,9 @@ def run(
     skip_gemini: bool = False,
     history_text: str = "",
     iteration: int = 0,
+    user_memory: list[dict] | None = None,
+    user_repo_preferences: list[dict] | None = None,
+    repo_user_memory: list[dict] | None = None,
 ) -> QAResponse:
     """Run the Code Q&A Agent and return a structured response.
 
@@ -167,13 +203,25 @@ def run(
     skip_groq / skip_gemini:
         Force-skip provider flags.
     history_text:
-        Formatted conversation history injected into the system prompt.
+        Rolling conversation summary injected into the system prompt.
     iteration:
         Re-retrieval iteration count (0 = first attempt).
+    user_memory:
+        Global user facts (preferences, background) from long-term memory.
+    user_repo_preferences:
+        Facts about how this user works with this specific repo.
+    repo_user_memory:
+        Codebase facts learned through this user's past conversations.
     """
     from src.generation.llm_client import generate_answer_with_fallback, LLMProviderError
 
-    augmented_system = _build_augmented_system_prompt(system_prompt, history_text)
+    augmented_system = _build_augmented_system_prompt(
+        system_prompt,
+        history_text=history_text,
+        user_memory=user_memory,
+        user_repo_preferences=user_repo_preferences,
+        repo_user_memory=repo_user_memory,
+    )
 
     if iteration > 0:
         augmented_system += (

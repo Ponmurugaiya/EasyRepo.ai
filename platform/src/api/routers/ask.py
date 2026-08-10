@@ -49,6 +49,8 @@ def _run_summarize_in_own_session(
     db_url: str,
     llm_client,
     trace,
+    user_id: str | None = None,
+    repo_id: str | None = None,
 ) -> None:
     """Open a dedicated DB session for summarize_after_turn and run it.
 
@@ -64,6 +66,8 @@ def _run_summarize_in_own_session(
                 db=own_db,
                 llm_client=llm_client,
                 trace=trace,
+                user_id=user_id,
+                repo_id=repo_id,
             )
     except Exception as exc:
         logger.warning("Background summarize failed: %s", exc)
@@ -305,6 +309,8 @@ async def ask_repository(
                     db_url=_db_url,
                     llm_client=_llm_client,
                     trace=_trace,
+                    user_id=current_user.id,
+                    repo_id=repo_id,
                 )
             )
         except Exception as exc:

@@ -193,7 +193,7 @@ async def run_pipeline(
     # ── Conversation history loading ─────────────────────────────────────────
     history_text = ""
     if user_id and conversation_id:
-        # Authenticated: load from DB (summary + recent unsummarised turns)
+        # Authenticated: load from DB (summary only — no raw turns)
         try:
             from src.storage import conversation_store
             summary, recent_turns = conversation_store.load_history(
@@ -222,6 +222,32 @@ async def run_pipeline(
 
     if history_text:
         trace.step_history_debug(history_text)
+
+    # ── Long-term memory loading ──────────────────────────────────────────────
+    # Load all three memory tiers for authenticated users and inject them into
+    # every Answer Agent call — even on Q1, so prior-session context is always
+    # available.
+    user_memory_facts: list[dict] = []
+    user_repo_pref_facts: list[dict] = []
+    repo_user_memory_facts: list[dict] = []
+    if user_id:
+        try:
+            from src.storage import memory_store
+            user_memory_facts = memory_store.load_user_memory(user_id, db)
+            user_repo_pref_facts = memory_store.load_user_repo_preferences(
+                user_id, repo_id, db
+            )
+            repo_user_memory_facts = memory_store.load_repo_user_memory(
+                user_id, repo_id, db
+            )
+            logger.debug(
+                "LTM loaded: user=%d user_repo=%d repo=%d facts",
+                len(user_memory_facts),
+                len(user_repo_pref_facts),
+                len(repo_user_memory_facts),
+            )
+        except Exception as exc:
+            logger.warning("Failed to load long-term memory: %s", exc)
 
     # ── 2. Query Planner ─────────────────────────────────────────────────────
     try:
@@ -412,6 +438,9 @@ async def run_pipeline(
                 skip_gemini=skip_gemini,
                 history_text=history_text,
                 iteration=attempt,
+                user_memory=user_memory_facts,
+                user_repo_preferences=user_repo_pref_facts,
+                repo_user_memory=repo_user_memory_facts,
             )
         )
 

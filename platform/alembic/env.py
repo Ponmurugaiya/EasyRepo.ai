@@ -10,7 +10,7 @@ from alembic import context
 import pathlib as _pathlib
 _env_file = _pathlib.Path(__file__).resolve().parent.parent.parent / ".env"
 if _env_file.exists():
-    with open(_env_file) as _f:
+    with open(_env_file, encoding="utf-8", errors="ignore") as _f:
         for _line in _f:
             _line = _line.strip()
             if _line and "=" in _line and not _line.startswith("#"):
