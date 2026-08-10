@@ -1,23 +1,31 @@
 """Conversation history formatting helpers.
 
-Converts conversation turns into a compact text block suitable for injection
+Converts conversation history into a compact text block suitable for injection
 into the Answer Agent's system prompt.
 
-The format is designed to be token-efficient:
-  User: <message>
-  Assistant: <message>
-  ...
+Design: the LLM always receives only a rolling summary of prior exchanges —
+never raw turn-by-turn history.  This keeps the context window bounded and
+predictable regardless of conversation length.
 
-When a rolling summary is present (authenticated users), it appears first
-followed by the recent unsummarised turns.
+Flow
+----
+  Q1 answered  → summarize(Q1+A1)              → summary_v1
+  Q2 arrives   → inject summary_v1 into prompt → answer Q2
+  Q2 answered  → summarize(summary_v1 + Q2+A2) → summary_v2
+  Q3 arrives   → inject summary_v2 into prompt → answer Q3
+  …
 
 Public API
 ----------
 format_history(turns) -> str
-    Format a list of raw ConversationTurn dicts/objects.
+    Format client-sent turns for anonymous users (no DB persistence).
+    Used as a best-effort fallback; the full raw list is formatted because
+    anonymous users have no server-side summary.
 
 format_history_with_summary(summary, recent_turns) -> str
-    Format DB-backed summary + recent ConversationTurnModel objects.
+    Format DB-backed history for authenticated users.
+    Only the rolling summary is included — ``recent_turns`` is accepted for
+    signature compatibility but is intentionally ignored.
 """
 
 from __future__ import annotations
@@ -30,6 +38,10 @@ if TYPE_CHECKING:
 
 def format_history(turns: list) -> str:
     """Format a list of conversation turns from the client payload.
+
+    Used for anonymous users who manage history client-side and re-send it
+    on every request.  Raw turns are formatted as-is since there is no
+    server-side summary available.
 
     Parameters
     ----------
@@ -62,32 +74,29 @@ def format_history(turns: list) -> str:
 
 def format_history_with_summary(
     summary: Optional[str],
-    recent_turns: list["ConversationTurnModel"],
+    recent_turns: "list[ConversationTurnModel]",  # accepted but not used
 ) -> str:
-    """Format DB-backed conversation history (summary + recent turns).
+    """Format DB-backed conversation history for authenticated users.
+
+    Only the rolling summary is injected into the prompt.  ``recent_turns``
+    is accepted to preserve the call-site signature but is intentionally
+    ignored — the rolling summary already captures everything those turns
+    contained.
 
     Parameters
     ----------
     summary:
-        Rolling LLM-generated summary of older turns (may be None).
+        Rolling LLM-generated summary of all prior exchanges (may be None
+        on the very first message of a conversation).
     recent_turns:
-        Most recent unsummarised ConversationTurnModel rows.
+        Ignored.  Kept in signature for backward compatibility.
 
     Returns
     -------
     str
-        Formatted history text, or empty string if both inputs are empty/None.
+        The summary string, or empty string if no summary exists yet.
     """
-    parts = []
+    if not summary:
+        return ""
 
-    if summary:
-        parts.append(f"[Previous conversation summary]\n{summary}")
-
-    if recent_turns:
-        turn_lines = []
-        for turn in recent_turns:
-            role_label = "User" if turn.role == "user" else "Assistant"
-            turn_lines.append(f"{role_label}: {turn.content}")
-        parts.append("\n".join(turn_lines))
-
-    return "\n\n".join(parts)
+    return f"[Conversation summary so far]\n{summary}"

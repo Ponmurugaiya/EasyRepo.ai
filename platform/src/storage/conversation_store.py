@@ -1,9 +1,17 @@
 """Conversation history persistence service.
 
 Three responsibilities:
-  1. load_history   — load summary + recent unsummarised turns for a conversation
-  2. save_turn      — upsert conversation row and append a new turn
-  3. maybe_summarize — compress old turns into a rolling summary when threshold is hit
+  1. load_history        — load the rolling summary for a conversation (summary only,
+                           no raw turns — the LLM always sees the compressed view)
+  2. save_turn           — upsert conversation row and append a new turn
+  3. summarize_after_turn — after every completed exchange (user + assistant turn),
+                            immediately compress the latest turns into the rolling
+                            summary so the next request never sees raw history
+
+Design: every Q&A pair is summarised eagerly after it is saved.
+The rolling summary is cumulative — each new summary incorporates the prior
+summary plus the latest exchange.  load_history therefore returns only the
+summary string; no raw turns are ever forwarded to the Answer Agent.
 
 Only called for authenticated users (user_id must be present).
 Anonymous users send their history in the request body — nothing is persisted.
@@ -12,7 +20,6 @@ Anonymous users send their history in the request body — nothing is persisted.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -22,20 +29,17 @@ from src.storage.models import ConversationModel, ConversationTurnModel
 
 logger = logging.getLogger(__name__)
 
-# Number of unsummarised turns that triggers summarisation.
-# 20 turns = 10 user/assistant exchanges.
-_SUMMARIZE_THRESHOLD = int(os.environ.get("CONVERSATION_SUMMARIZE_THRESHOLD", "20"))
-
-# How many recent turns to keep unsummarised (passed raw to the Answer Agent).
-_KEEP_RECENT = 6
-
 
 def load_history(
     conversation_id: str,
     user_id: str,
     db: Session,
-) -> tuple[Optional[str], list[ConversationTurnModel]]:
-    """Return (summary_text | None, recent_unsummarised_turns).
+) -> tuple[Optional[str], list]:
+    """Return (summary_text | None, []) for a conversation.
+
+    The second element is always an empty list — raw turns are never passed to
+    the LLM.  The signature retains the tuple shape so callers that destructure
+    ``(summary, recent_turns)`` continue to work without modification.
 
     If no conversation row exists yet, returns (None, []).
 
@@ -58,19 +62,8 @@ def load_history(
         if conv is None:
             return None, []
 
-        # Load turns AFTER the summarised range
-        recent_turns: list[ConversationTurnModel] = (
-            db.query(ConversationTurnModel)
-            .filter(
-                ConversationTurnModel.conversation_id == conversation_id,
-                ConversationTurnModel.turn_index > conv.summarized_through_turn,
-            )
-            .order_by(ConversationTurnModel.turn_index.asc())
-            .all()
-        )
-
-        # Return only the _KEEP_RECENT most recent turns to cap token overhead
-        return conv.summary, recent_turns[-_KEEP_RECENT:]
+        # Return only the rolling summary — no raw turns forwarded to the LLM.
+        return conv.summary, []
 
     except Exception as exc:
         logger.warning("load_history failed: %s", exc)
@@ -152,17 +145,28 @@ def save_turn(
         db.rollback()
 
 
-def maybe_summarize(
+def summarize_after_turn(
     conversation_id: str,
     db: Session,
     llm_client,
     trace=None,
 ) -> None:
-    """Compress old turns into a rolling summary when the threshold is exceeded.
+    """Eagerly compress all unsummarised turns into the rolling summary.
+
+    Called after every completed Q&A exchange (user turn + assistant turn).
+    Unlike the old threshold-gated approach, this runs unconditionally so the
+    next request always receives a pure summary — no raw turns are ever carried
+    forward to the Answer Agent.
+
+    The rolling summary is cumulative:
+      • Q1 → summarize(Q1+A1)                        → summary_v1
+      • Q2 → summarize(summary_v1 + Q2+A2)           → summary_v2
+      • Q3 → summarize(summary_v2 + Q3+A3)           → summary_v3
+      …
 
     IMPORTANT: This function must be called with its own dedicated DB session,
-    NOT the request session — it may be dispatched to a thread pool and
-    SQLAlchemy sessions are not thread-safe.
+    NOT the request session — it is dispatched to a thread pool and SQLAlchemy
+    sessions are not thread-safe.
 
     Parameters
     ----------
@@ -184,7 +188,7 @@ def maybe_summarize(
         if conv is None:
             return
 
-        # Count unsummarised turns
+        # Load all turns that have not yet been incorporated into the summary.
         unsummarised: list[ConversationTurnModel] = (
             db.query(ConversationTurnModel)
             .filter(
@@ -195,27 +199,22 @@ def maybe_summarize(
             .all()
         )
 
-        if len(unsummarised) <= _SUMMARIZE_THRESHOLD:
-            return  # not yet at threshold
-
-        # Summarise all but the most recent _KEEP_RECENT turns
-        turns_to_compress = unsummarised[:-_KEEP_RECENT]
-        if not turns_to_compress:
+        if not unsummarised:
             return
 
-        # Build conversation text for condensation
-        history_text = "\n".join(
-            f"{t.role.upper()}: {t.content}" for t in turns_to_compress
+        # Build exchange text from the new turns.
+        new_turns_text = "\n".join(
+            f"{t.role.upper()}: {t.content}" for t in unsummarised
         )
 
         prior_summary = conv.summary or ""
         if prior_summary:
             condensation_input = (
                 f"Prior summary:\n{prior_summary}\n\n"
-                f"New turns to incorporate:\n{history_text}"
+                f"New exchange to incorporate:\n{new_turns_text}"
             )
         else:
-            condensation_input = history_text
+            condensation_input = new_turns_text
 
         system_prompt = (
             "You are a conversation summarizer for a codebase assistant. "
@@ -232,27 +231,34 @@ def maybe_summarize(
                 groq_model="llama-3.1-8b-instant",
             )
         except Exception as llm_exc:
-            logger.warning("maybe_summarize: LLM call failed: %s", llm_exc)
+            logger.warning("summarize_after_turn: LLM call failed: %s", llm_exc)
             return
 
-        # Update the conversation row
+        # Advance the summarized_through pointer to the last turn just processed.
+        last_turn_index = unsummarised[-1].turn_index
         conv.summary = new_summary
-        conv.summarized_through_turn = turns_to_compress[-1].turn_index
+        conv.summarized_through_turn = last_turn_index
         db.commit()
 
         logger.info(
-            "Conversation %s summarised through turn %d (%d turns compressed)",
+            "Conversation %s summarised through turn %d (%d new turns compressed)",
             conversation_id[:16],
-            conv.summarized_through_turn,
-            len(turns_to_compress),
+            last_turn_index,
+            len(unsummarised),
         )
         if trace:
             trace.step_summarise(
                 conversation_id=conversation_id,
-                turns_compressed=len(turns_to_compress),
-                summarized_through=conv.summarized_through_turn,
+                turns_compressed=len(unsummarised),
+                summarized_through=last_turn_index,
             )
 
     except Exception as exc:
-        logger.warning("maybe_summarize failed: %s", exc)
+        logger.warning("summarize_after_turn failed: %s", exc)
         db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility alias — remove once all call sites are updated.
+# ---------------------------------------------------------------------------
+maybe_summarize = summarize_after_turn

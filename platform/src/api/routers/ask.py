@@ -50,7 +50,7 @@ def _run_summarize_in_own_session(
     llm_client,
     trace,
 ) -> None:
-    """Open a dedicated DB session for maybe_summarize and run it.
+    """Open a dedicated DB session for summarize_after_turn and run it.
 
     Called from a thread pool — must NOT share the request session.
     Any exception is caught and logged silently so it never crashes the server.
@@ -59,7 +59,7 @@ def _run_summarize_in_own_session(
         from src.storage.db import get_session
         from src.storage import conversation_store
         with get_session(db_url) as own_db:
-            conversation_store.maybe_summarize(
+            conversation_store.summarize_after_turn(
                 conversation_id=conversation_id,
                 db=own_db,
                 llm_client=llm_client,
