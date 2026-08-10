@@ -28,37 +28,81 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """\
-You are a senior software architect writing documentation for a codebase.
+_SYSTEM_PROMPT_OVERVIEW = """\
+You are a senior software architect writing a high-level overview of a codebase.
 You will be given:
-  1. A PROJECT STRUCTURE tree showing all files and their paths
+  1. A PROJECT STRUCTURE tree showing every file and its exact path
   2. Folder summaries describing each folder's purpose and key entities
 
-Use BOTH to write a comprehensive repository overview.
+Write a concise, readable overview in 4-6 paragraphs:
 
-For a BRIEF overview (repository_overview): 4-6 paragraphs covering:
-  - What the project does (1 paragraph)
-  - Core architecture and key subsystems — reference the actual folder/file structure (2 paragraphs)
-  - Main data flows and how components interact (1 paragraph)
-  - Entry points and how to navigate the codebase — mention specific files by path (1 paragraph)
+Paragraph 1 — What the project does
+  Describe the project's purpose, the problem it solves, and its primary users.
 
-For a DETAILED walkthrough (repository_detailed): Section-per-folder:
-  - Show the folder's files from the project structure
-  - Each section: folder purpose, key files with their exact paths, main classes/functions
-  - More inline citations per section
-  - Cross-folder relationships and dependency patterns
+Paragraphs 2-3 — Core architecture and key subsystems
+  Identify the main subsystems/layers (e.g. API, storage, generation, ingestion).
+  Reference specific folders and files from the PROJECT STRUCTURE by their exact paths.
+  Example: "The API layer lives in `src/api/` with the main entry point at `src/api/main.py`."
 
-Project structure rules:
-  - When describing the layout, use the exact file paths from the PROJECT STRUCTURE tree.
-  - You may reproduce the structure tree as a code block in your answer to show the layout.
+Paragraph 4 — Main data flows
+  Describe how data moves through the system end-to-end.
+  Mention the key files involved at each stage.
+
+Paragraph 5 — Entry points and navigation
+  Tell a developer where to start reading:
+  - Which files are the main entry points (name them with exact paths)
+  - How the folders map to concerns
+  - You MAY reproduce the project structure tree as a code block so the reader can see the layout.
 
 Citation rules (CRITICAL):
-  - Use ONLY citations that appear in the folder summaries provided.
-  - Format: [file_path:start_line-end_line]
+  - Use ONLY [file_path:start_line-end_line] citations that appear in the folder summaries.
   - Do NOT invent file paths or line numbers.
+  - File paths in prose (not citations) must exactly match the PROJECT STRUCTURE tree.
 
-Do NOT use <answer_json> blocks — write the Markdown answer directly.
+Do NOT use <answer_json> blocks — write Markdown prose directly.
 """
+
+_SYSTEM_PROMPT_DETAILED = """\
+You are a senior software architect writing a detailed technical walkthrough of a codebase.
+You will be given:
+  1. A PROJECT STRUCTURE tree showing every file and its exact path
+  2. Folder summaries describing each folder's purpose and key entities
+
+Start with a brief project introduction (2-3 sentences), then write one section per folder.
+
+For each folder section:
+  ### `folder/path/` — Brief folder title
+
+  List the files in this folder (use the exact paths from the PROJECT STRUCTURE tree):
+  ```
+  folder/path/
+  ├── file1.py
+  └── file2.py
+  ```
+
+  Then describe:
+  - The folder's responsibility and domain ownership
+  - Each key file: what it does, main classes/functions with inline citations
+  - Cross-folder dependencies: what this folder imports from or exports to others
+
+Cross-reference sections:
+  After all folder sections, add a "Key Data Flows" section tracing 1-3 important
+  end-to-end paths through the codebase (e.g. request → processing → response).
+
+Citation rules (CRITICAL):
+  - Use ONLY [file_path:start_line-end_line] citations that appear in the folder summaries.
+  - Do NOT invent file paths or line numbers.
+  - File paths in prose and code blocks must exactly match the PROJECT STRUCTURE tree.
+
+Do NOT use <answer_json> blocks — write Markdown directly.
+"""
+
+
+def _get_system_prompt(intent: str) -> str:
+    """Return the appropriate system prompt for the given intent."""
+    if intent == "repository_detailed":
+        return _SYSTEM_PROMPT_DETAILED
+    return _SYSTEM_PROMPT_OVERVIEW
 
 
 def _build_file_tree(file_paths: list[str]) -> str:
@@ -183,14 +227,11 @@ def summarize_repo(
 
     context = _build_context(repo_name, folder_summaries, total_files, file_paths)
     context_tokens = len(context) // 4
-    mode = "detailed" if intent == "repository_detailed" else "brief"
-    repo_query = f"Write a {mode} overview of this repository. Query: {query}"
+    mode = "detailed" if intent == "repository_detailed" else "overview"
+    repo_query = f"Write a repository {mode} for this codebase. User query: {query}"
 
-    # Adjust system prompt for brief vs detailed
-    system = _SYSTEM_PROMPT.replace(
-        "For a BRIEF overview (repository_overview):",
-        f"For a {'BRIEF' if mode == 'brief' else 'DETAILED'} overview ({intent}):",
-    )
+    # Each intent gets its own focused system prompt
+    system = _get_system_prompt(intent)
 
     if trace:
         trace.step_llm_dispatch(
