@@ -17,9 +17,12 @@ After the model returns an answer, this module:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.storage.models import EntityModel
@@ -350,6 +353,34 @@ def validate_citations(
         candidates = file_entity_map.get(file_path) or _fuzzy_file_match(file_path, file_entity_map)
 
         if not candidates:
+            # DB fallback: try to find entities from this file in the full repo.
+            # This populates nearest_entity / nearest_entity_id so the correction
+            # agent can deterministically replace the tag rather than silently failing.
+            nearest_db: Optional[str] = None
+            nearest_db_id: Optional[str] = None
+            if db_session is not None:
+                try:
+                    from src.storage.models import EntityModel as _EM
+                    from sqlalchemy import select as _sel
+
+                    # Exact file-path match first, then basename fallback
+                    db_candidates = (
+                        db_session.scalars(
+                            _sel(_EM).where(_EM.file_path == file_path)
+                        ).all()
+                        or db_session.scalars(
+                            _sel(_EM).where(
+                                _EM.file_path.like(f"%/{file_path.split('/')[-1]}")
+                            )
+                        ).all()
+                    )
+                    if repo_id:
+                        db_candidates = [e for e in db_candidates if e.repo_id == repo_id]
+                    if db_candidates:
+                        nearest_db, nearest_db_id = _describe_nearest(db_candidates, start_line)
+                except Exception as _db_exc:
+                    logger.debug("DB fallback for missing file '%s' failed: %s", file_path, _db_exc)
+
             unsupported.append(
                 CitationMismatch(
                     raw=raw,
@@ -357,6 +388,8 @@ def validate_citations(
                     start_line=start_line,
                     end_line=end_line,
                     reason=f"File path '{file_path}' not found in provided context.",
+                    nearest_entity=nearest_db,
+                    nearest_entity_id=nearest_db_id,
                 )
             )
             continue
@@ -458,6 +491,19 @@ def validate_citations(
             or any((matched.id, c.id) in graph_calls for c in callee_candidates)
             or any((matched.name, c.name) in graph_calls for c in callee_candidates)
         )
+
+        # For variable entities, CALLS edges are on the containing function — walk up
+        if not is_valid_call_site and matched.type == "variable" and matched.parent_id and db_session:
+            try:
+                from src.storage.models import EntityModel as _EM2
+                parent_ent = db_session.query(_EM2).filter_by(id=matched.parent_id).first()
+                if parent_ent:
+                    is_valid_call_site = (
+                        any((parent_ent.id, c.id) in graph_calls for c in callee_candidates)
+                        or any((parent_ent.name, c.name) in graph_calls for c in callee_candidates)
+                    )
+            except Exception:
+                pass
 
         if is_valid_call_site:
             call_citations.append(

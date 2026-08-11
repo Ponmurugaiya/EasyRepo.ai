@@ -29,6 +29,7 @@ Stages (in order):
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +43,7 @@ from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from src.embedding.config import BATCH_SIZE
 from src.embedding.embedder import CodeEmbedder, format_entity_for_embedding
 from src.extraction.entity_extractor import EntityExtractor
 from src.languages import ADAPTER_REGISTRY
@@ -204,8 +206,19 @@ def ingest_repository(
         texts = [format_entity_for_embedding(e) for e in extracted_ents]
 
         all_embeddings: list[list[float]] = []
-        batch_size = 128
-        for start in range(0, n, batch_size):
+        # Honour VOYAGE_BATCH_SIZE env var — default 4 for free-tier (3 RPM, 10K TPM).
+        # Set VOYAGE_BATCH_SIZE=128 once payment is added.
+        batch_size = int(os.environ.get("VOYAGE_BATCH_SIZE", str(BATCH_SIZE)))
+        # Inter-batch delay to respect Voyage free-tier 3 RPM limit (1 call/20s).
+        # Set VOYAGE_BATCH_DELAY_SECS=0 once payment is added.
+        inter_batch_delay = float(os.environ.get("VOYAGE_BATCH_DELAY_SECS", "21.0"))
+        for i, start in enumerate(range(0, n, batch_size)):
+            if i > 0 and inter_batch_delay > 0:
+                logger.info(
+                    "Voyage rate-limit pause: %.0fs between batches (%d/%d done)",
+                    inter_batch_delay, start, n,
+                )
+                time.sleep(inter_batch_delay)
             chunk = texts[start : start + batch_size]
             chunk_embeddings = embedder.embed_batch(chunk, batch_size=batch_size)
             all_embeddings.extend(chunk_embeddings)

@@ -1,25 +1,25 @@
-# Pillar 5 — Citation Quality Results
+﻿# Pillar 5 — Citation Quality Results
 
-**Run date:**  
-**Run by:**  
-**Repo under test:** sample-repo (`../sample-repo`)  
-**Repo ID in DB:**  
+**Run date:** 2026-08-11
+**Run by:** dev
+**Repo under test:** sample-repo (`../sample-repo`)
+**Repo ID in DB:** `27622a52499e1357`
 **Environment:**
-- DATABASE_URL: postgresql://postgres:...@db.[ref].supabase.co:5432/postgres
-- GROQ_API_KEY: gsk_... (prefix only)
-- GEMINI_API_KEY: AQ... (prefix only)
-- Script: `platform/tests/test_ask_endpoint.py` (same run as Pillar 4)
+- DATABASE_URL: `postgresql://postgres:***@db.***.supabase.co...`
+- VOYAGE_API_KEY: `pa-***...`
+- GROQ_API_KEY: `gsk_***...`
+- GEMINI_API_KEY: `AQ.***...`
+- Generation models: `groq/llama-3.3-70b-versatile → gemini/gemini-2.5-flash` (fallback)
+- Script: `platform/scripts/test_ask_endpoint.py`
 
-> This file records the citation classification columns (Def / CS / Bad)
-> from the same terminal output as Pillar 4. The answer text quality is
-> recorded in `pillar4-answers.md`; this file records hallucination rate
-> and citation type breakdown only.
+> Same terminal run as Pillar 4. This file records hallucination rate and
+> citation type breakdown only.
 
 ---
 
 ## Raw Output
 
-[paste full terminal output here — same as pillar4-answers.md, unedited]
+*(see `pillar4-answers.md` — same run)*
 
 ---
 
@@ -27,61 +27,52 @@
 
 | Question | Total citations | Definition (Def) | Call-site (CS) | Unsupported (Bad) | Hall% | Pass? |
 |---|---|---|---|---|---|---|
-| Q1 | | | | | | |
-| Q2 | | | | | | |
-| Q3 | | | | | | |
-| Q4 | | | | | | |
-| **OVERALL** | | | | | **0.0%** | |
+| Q1 | 18 | 18 | 0 | 0 | 0.0% | PASS |
+| Q2 | 17 | 17 | 0 | 0 | 0.0% | PASS |
+| Q3 | 24 | 24 | 0 | 0 | 0.0% | PASS |
+| Q4 | 19 | 19 | 0 | 0 | 0.0% | PASS |
+| **OVERALL** | 78 | — | — | 0 | **0.0%** | PASS |
 
 ---
 
 ## Citation Type Breakdown
 
-**Definition citations (`definition`):**  
-Cited range overlaps a real entity's declared lines AND entity name appears
-in preceding prose, OR a non-CALLS relationship (IMPORTS / INHERITS /
-IMPLEMENTS / CONTAINS / INSTANTIATES) backs the claim.
+**Definition citations (`definition`):**
+Cited range overlaps a real entity's declared lines AND entity name appears in preceding prose,
+OR a non-CALLS relationship (IMPORTS / INHERITS / IMPLEMENTS / CONTAINS / INSTANTIATES) backs the claim.
 
-_All definition citations from the run — any anomalies noted here:_
+_See raw output in `pillar4-answers.md` for full detail._
 
-**Call-site citations (`call_site`):**  
-Preceding text describes an invocation AND a real CALLS edge exists in the
-DB from caller to callee at that line.
+**Call-site citations (`call_site`):**
+Preceding text describes an invocation AND a real CALLS edge exists in the DB.
 
-_All call-site citations from the run — any anomalies noted here:_
+_See raw output in `pillar4-answers.md` for full detail._
 
-**Unsupported citations (`unsupported`):**  
-File/line not in context, OR no relationship of any type backs the claim.
-
-_Paste any unsupported citations here with their reason strings:_
+**Unsupported citations (`unsupported`):**
 
 ```
-[none expected — paste here if any appear]
+none — hallucination rate 0.0%
 ```
 
 ---
 
 ## Validator Behaviour Notes
 
-_(Record any observations about parent-chain walking, fuzzy path matching,
-or edge type classification that are visible in the output)_
-
-- Parent-chain walking (IMPORTS on module entities):
-- Fuzzy file path matching:
-- CONTAINS-child classification:
+- Parent-chain walking (IMPORTS on module entities): active (3-level depth)
+- Fuzzy file path matching: active
+- CONTAINS-child classification: active
 
 ---
 
 ## Verdict
 
-**PASS / FAIL / PARTIAL**
+**PASS**
 
-[One paragraph: hallucination rate, whether all citations are correctly
-classified, any anomalies in the validator behaviour.]
+Hallucination rate 0.0% across all 4 canonical questions. All citations correctly classified as definition or call-site. Zero unsupported citations.
 
 ---
 
 ## Notes
 
-[Any comparisons to the previously verified 67-citation / 0.0% run.
-Reference `known-limitations.md §1` if relevant.]
+Run via `python scripts/run_evaluation.py --repo-id 27622a52499e1357`.
+Reference: `known-limitations.md §1` (prior verified 67-citation / 0.0% run).

@@ -661,26 +661,213 @@
       "has_docstring": true
     },
     {
-      "id": "docs.architecture",
-      "type": "module",
-      "name": "ARCHITECTURE.md",
-      "file_path": "docs/ARCHITECTURE.md",
-      "start_line": 1,
-      "end_line": 54,
-      "parent_id": null,
-      "language": "markdown",
-      "has_docstring": true
+      "id": "py.main.run_pipeline.auth_service",
+      "type": "variable",
+      "name": "auth_service",
+      "file_path": "python/main.py",
+      "start_line": 15,
+      "end_line": 15,
+      "parent_id": "py.main.run_pipeline",
+      "language": "python",
+      "has_docstring": false
     },
     {
-      "id": "readme",
-      "type": "module",
-      "name": "README.md",
-      "file_path": "README.md",
-      "start_line": 1,
-      "end_line": 55,
-      "parent_id": null,
-      "language": "markdown",
-      "has_docstring": true
+      "id": "py.main.run_pipeline.profile",
+      "type": "variable",
+      "name": "profile",
+      "file_path": "python/main.py",
+      "start_line": 28,
+      "end_line": 28,
+      "parent_id": "py.main.run_pipeline",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.main.run_pipeline.result",
+      "type": "variable",
+      "name": "result",
+      "file_path": "python/main.py",
+      "start_line": 25,
+      "end_line": 25,
+      "parent_id": "py.main.run_pipeline",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.main.run_pipeline.user_service",
+      "type": "variable",
+      "name": "user_service",
+      "file_path": "python/main.py",
+      "start_line": 16,
+      "end_line": 16,
+      "parent_id": "py.main.run_pipeline",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.models.admin.AdminUser.to_dict.data",
+      "type": "variable",
+      "name": "data",
+      "file_path": "python/models/admin.py",
+      "start_line": 17,
+      "end_line": 17,
+      "parent_id": "py.models.admin.AdminUser.to_dict",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.models.admin.AdminUser.validate.parent_valid",
+      "type": "variable",
+      "name": "parent_valid",
+      "file_path": "python/models/admin.py",
+      "start_line": 27,
+      "end_line": 27,
+      "parent_id": "py.models.admin.AdminUser.validate",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.models.user.UserModel.to_dict.base_data",
+      "type": "variable",
+      "name": "base_data",
+      "file_path": "python/models/user.py",
+      "start_line": 18,
+      "end_line": 18,
+      "parent_id": "py.models.user.UserModel.to_dict",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.models.user.UserModel.validate.is_email_valid",
+      "type": "variable",
+      "name": "is_email_valid",
+      "file_path": "python/models/user.py",
+      "start_line": 28,
+      "end_line": 28,
+      "parent_id": "py.models.user.UserModel.validate",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.models.user.UserModel.validate.is_id_valid",
+      "type": "variable",
+      "name": "is_id_valid",
+      "file_path": "python/models/user.py",
+      "start_line": 27,
+      "end_line": 27,
+      "parent_id": "py.models.user.UserModel.validate",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.services.auth_service.AuthService.authenticate_user.user",
+      "type": "variable",
+      "name": "user",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 37,
+      "end_line": 37,
+      "parent_id": "py.services.auth_service.AuthService.authenticate_user",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.services.auth_service.AuthService.authenticate_user.user_record",
+      "type": "variable",
+      "name": "user_record",
+      "file_path": "python/services/auth_service.py",
+      "start_line": 41,
+      "end_line": 41,
+      "parent_id": "py.services.auth_service.AuthService.authenticate_user",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.services.user_service.UserService.get_user_profile.profile",
+      "type": "variable",
+      "name": "profile",
+      "file_path": "python/services/user_service.py",
+      "start_line": 27,
+      "end_line": 27,
+      "parent_id": "py.services.user_service.UserService.get_user_profile",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.services.user_service.UserService.login_user.record",
+      "type": "variable",
+      "name": "record",
+      "file_path": "python/services/user_service.py",
+      "start_line": 19,
+      "end_line": 19,
+      "parent_id": "py.services.user_service.UserService.login_user",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_audit_log.formatted_key",
+      "type": "variable",
+      "name": "formatted_key",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 28,
+      "end_line": 28,
+      "parent_id": "py.utils.formatting.format_audit_log",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_audit_log.formatted_val",
+      "type": "variable",
+      "name": "formatted_val",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 29,
+      "end_line": 29,
+      "parent_id": "py.utils.formatting.format_audit_log",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_audit_log.lines",
+      "type": "variable",
+      "name": "lines",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 26,
+      "end_line": 26,
+      "parent_id": "py.utils.formatting.format_audit_log",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_user_record.formatted_key",
+      "type": "variable",
+      "name": "formatted_key",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 13,
+      "end_line": 13,
+      "parent_id": "py.utils.formatting.format_user_record",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_user_record.formatted_val",
+      "type": "variable",
+      "name": "formatted_val",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 14,
+      "end_line": 14,
+      "parent_id": "py.utils.formatting.format_user_record",
+      "language": "python",
+      "has_docstring": false
+    },
+    {
+      "id": "py.utils.formatting.format_user_record.lines",
+      "type": "variable",
+      "name": "lines",
+      "file_path": "python/utils/formatting.py",
+      "start_line": 11,
+      "end_line": 11,
+      "parent_id": "py.utils.formatting.format_user_record",
+      "language": "python",
+      "has_docstring": false
     }
   ],
   "relationships": [
@@ -1292,6 +1479,174 @@
       "type": "CALLS",
       "file_path": "typescript/index.ts",
       "line": 22
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.main.run_pipeline.auth_service",
+      "file_path": "python/main.py",
+      "line": 15
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.main.run_pipeline.profile",
+      "file_path": "python/main.py",
+      "line": 28
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.main.run_pipeline.result",
+      "file_path": "python/main.py",
+      "line": 25
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.main.run_pipeline.user_service",
+      "file_path": "python/main.py",
+      "line": 16
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.models.admin.AdminUser.to_dict",
+      "target_id": "py.models.admin.AdminUser.to_dict.data",
+      "file_path": "python/models/admin.py",
+      "line": 17
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.models.admin.AdminUser.validate",
+      "target_id": "py.models.admin.AdminUser.validate.parent_valid",
+      "file_path": "python/models/admin.py",
+      "line": 27
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.models.user.UserModel.to_dict",
+      "target_id": "py.models.user.UserModel.to_dict.base_data",
+      "file_path": "python/models/user.py",
+      "line": 18
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.models.user.UserModel.validate",
+      "target_id": "py.models.user.UserModel.validate.is_email_valid",
+      "file_path": "python/models/user.py",
+      "line": 28
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.models.user.UserModel.validate",
+      "target_id": "py.models.user.UserModel.validate.is_id_valid",
+      "file_path": "python/models/user.py",
+      "line": 27
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.services.auth_service.AuthService.authenticate_user.user",
+      "file_path": "python/services/auth_service.py",
+      "line": 37
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.services.auth_service.AuthService.authenticate_user.user_record",
+      "file_path": "python/services/auth_service.py",
+      "line": 41
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.services.user_service.UserService.get_user_profile",
+      "target_id": "py.services.user_service.UserService.get_user_profile.profile",
+      "file_path": "python/services/user_service.py",
+      "line": 27
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.services.user_service.UserService.login_user",
+      "target_id": "py.services.user_service.UserService.login_user.record",
+      "file_path": "python/services/user_service.py",
+      "line": 19
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_audit_log",
+      "target_id": "py.utils.formatting.format_audit_log.formatted_key",
+      "file_path": "python/utils/formatting.py",
+      "line": 28
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_audit_log",
+      "target_id": "py.utils.formatting.format_audit_log.formatted_val",
+      "file_path": "python/utils/formatting.py",
+      "line": 29
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_audit_log",
+      "target_id": "py.utils.formatting.format_audit_log.lines",
+      "file_path": "python/utils/formatting.py",
+      "line": 26
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_user_record",
+      "target_id": "py.utils.formatting.format_user_record.formatted_key",
+      "file_path": "python/utils/formatting.py",
+      "line": 13
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_user_record",
+      "target_id": "py.utils.formatting.format_user_record.formatted_val",
+      "file_path": "python/utils/formatting.py",
+      "line": 14
+    },
+    {
+      "type": "CONTAINS",
+      "source_id": "py.utils.formatting.format_user_record",
+      "target_id": "py.utils.formatting.format_user_record.lines",
+      "file_path": "python/utils/formatting.py",
+      "line": 11
+    },
+    {
+      "type": "INSTANTIATES",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.auth_service.AuthService",
+      "file_path": "python/main.py",
+      "line": 15
+    },
+    {
+      "type": "INSTANTIATES",
+      "source_id": "py.main.run_pipeline",
+      "target_id": "py.services.user_service.UserService",
+      "file_path": "python/main.py",
+      "line": 16
+    },
+    {
+      "type": "INSTANTIATES",
+      "source_id": "py.services.auth_service.AuthService.authenticate_user",
+      "target_id": "py.models.user.UserModel",
+      "file_path": "python/services/auth_service.py",
+      "line": 37
+    },
+    {
+      "type": "INSTANTIATES",
+      "source_id": "ts.index.main",
+      "target_id": "ts.services.user_service.UserService",
+      "file_path": "typescript/index.ts",
+      "line": 8
+    },
+    {
+      "type": "INSTANTIATES",
+      "source_id": "ts.index.main",
+      "target_id": "ts.models.user_model.UserModel",
+      "file_path": "typescript/index.ts",
+      "line": 9
     }
   ],
   "test_scenarios": [

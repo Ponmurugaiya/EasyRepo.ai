@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # Number of retries on rate-limit (429) responses
 _MAX_RETRIES = 5
-_RETRY_BASE_DELAY = 2.0  # seconds, doubles each retry
+_RETRY_BASE_DELAY = 22.0  # seconds — 3 RPM = 1 req/20s, start at 22s to be safe
 
 
 def extract_docstring(source: str, has_docstring: bool) -> str:
@@ -129,14 +129,24 @@ class CodeEmbedder:
 
         all_embeddings: list[list[float]] = []
         total = len(texts)
+        # Inter-batch delay to respect free-tier rate limits (3 RPM = 1 req/20s).
+        # Override with VOYAGE_BATCH_DELAY_SECS env var (set 0 once payment added).
+        inter_batch_delay = float(os.environ.get("VOYAGE_BATCH_DELAY_SECS", "21.0"))
 
-        for start in range(0, total, batch_size):
+        for i, start in enumerate(range(0, total, batch_size)):
             chunk = texts[start : start + batch_size]
             end = start + len(chunk)
             logger.info(
                 "Voyage embed: batch %d–%d / %d",
                 start + 1, end, total,
             )
+            # Pause between batches to stay under 3 RPM free-tier limit
+            if i > 0 and inter_batch_delay > 0:
+                logger.info(
+                    "Voyage rate-limit pause: sleeping %.0fs between batches (%d/%d done)",
+                    inter_batch_delay, start, total,
+                )
+                time.sleep(inter_batch_delay)
             embeddings = self._embed_with_retry(chunk, input_type)
             all_embeddings.extend(embeddings)
 

@@ -1,16 +1,9 @@
-"""Verification script for storage layer, embedding pipeline, and vector similarity search.
+"""Pillar 2 — Storage & Embedding Integrity
+Verifies entity counts, relationship counts, embedding dimensions, and vector ranking quality.
+Canonical location: evaluation/scripts/pillar2_storage.py
 
-Connects to the Supabase DB (DATABASE_URL from .env) and verifies data that was already
-ingested via the API. Does NOT re-ingest — run `python run.py` and POST /repositories
-first, then run this script with --repo-id <uuid>.
-
-Runs three spot-check queries to evaluate the code embedding model quality:
-  Q1: "authenticate a user with a token"
-  Q2: "validate a JWT bearer token"
-  Q3: "format a record for audit logging"
-
-Usage (from platform/):
-    python scripts/verify_storage.py --repo-id <uuid>
+Usage (from EasyRepo/):
+    python evaluation/scripts/pillar2_storage.py --repo-id <uuid>
 """
 
 import argparse
@@ -19,12 +12,13 @@ import os
 import sys
 from pathlib import Path
 
-# Add platform directory to sys.path
-PLATFORM_DIR = Path(__file__).resolve().parent.parent
+# ── Path setup: evaluation/scripts/ → evaluation/ → EasyRepo/ → EasyRepo/platform/ ──
+_HERE = Path(__file__).resolve()
+PLATFORM_DIR = _HERE.parent.parent.parent / "platform"
 if str(PLATFORM_DIR) not in sys.path:
     sys.path.insert(0, str(PLATFORM_DIR))
 
-# Load .env from repo root (one level above platform/)
+# ── Load .env from EasyRepo root ──
 ENV_PATH = PLATFORM_DIR.parent / ".env"
 if ENV_PATH.exists():
     with open(ENV_PATH, encoding="utf-8") as f:
@@ -159,12 +153,12 @@ def verify_storage(db_url: str, repo_id: str) -> None:
             .scalar()
         )
         logger.info(f"Total stored entities: {entity_count}")
-        # Accept ≥ 62 — extractor now emits variable entities not in the manifest
-        assert entity_count >= 62, f"Expected ≥ 62 entities, got {entity_count}"
-        logger.info(f"PASSED: Entity count matches manifest (got {entity_count}, expected ≥ 62)")
+        assert entity_count == 62, f"Expected 62 entities, got {entity_count}"
+        logger.info("PASSED: Entity count matches manifest (62)")
 
         # 2. Verify Relationship Counts per Type
         expected_rel_counts = {
+            "CONTAINS": 48,
             "IMPORTS": 11,
             "CALLS": 23,
             "INHERITS": 2,
@@ -186,13 +180,6 @@ def verify_storage(db_url: str, repo_id: str) -> None:
                 f"expected {expected_count}, got {actual}"
             )
             logger.info(f"PASSED: Relationship {rel_type} count matches ({expected_count})")
-
-        # CONTAINS — accept >= 48 (variable entities add extra CONTAINS children)
-        contains_actual = actual_rel_counts.get("CONTAINS", 0)
-        assert contains_actual >= 48, (
-            f"Expected >= 48 CONTAINS relationships, got {contains_actual}"
-        )
-        logger.info(f"PASSED: Relationship CONTAINS count >= 48 (got {contains_actual})")
 
         # INSTANTIATES — check it exists (count ≥ 1, no exact target)
         instantiates_count = actual_rel_counts.get("INSTANTIATES", 0)

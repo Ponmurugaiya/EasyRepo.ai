@@ -1,11 +1,10 @@
-"""Validation script for testing retrieval pipeline against sample-repo manifest scenarios.
+"""Pillar 3 — Retrieval Quality
+Validates the vector search + graph expansion pipeline across 6 named scenarios.
+Includes Precision@K, Recall@K, MRR, and expansion integrity checks.
+Canonical location: evaluation/scripts/pillar3_retrieval.py
 
-Includes automated verification that 100% of graph expansions are backed by actual DB relationship rows,
-explicit assertions for method disambiguation and orphan file isolation, detailed entity provenance,
-and numeric retrieval quality metrics (Precision@K, Recall@K, MRR) per scenario.
-
-Usage (from platform/):
-    python scripts/validate_retrieval.py --db-url <URL> --repo-id <uuid> --manifest ../sample-repo/test-manifest.json
+Usage (from EasyRepo/):
+    python evaluation/scripts/pillar3_retrieval.py --repo-id <uuid> --manifest sample-repo/test-manifest.json
 """
 
 from __future__ import annotations
@@ -17,8 +16,14 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Load .env from repo root (two levels up: scripts/ -> platform/ -> repo root)
-_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+# ── Path setup: evaluation/scripts/ → evaluation/ → EasyRepo/ → EasyRepo/platform/ ──
+_HERE = Path(__file__).resolve()
+PLATFORM_DIR = _HERE.parent.parent.parent / "platform"
+if str(PLATFORM_DIR) not in sys.path:
+    sys.path.insert(0, str(PLATFORM_DIR))
+
+# ── Load .env from EasyRepo root ──
+_ENV_PATH = PLATFORM_DIR.parent / ".env"
 if _ENV_PATH.exists():
     with open(_ENV_PATH, encoding="utf-8") as _f:
         for _line in _f:
@@ -26,8 +31,6 @@ if _ENV_PATH.exists():
             if _line and "=" in _line and not _line.startswith("#"):
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
-
-from sqlalchemy import select
 
 from src.retrieval import build_context, expand, search
 from src.retrieval.models import ExpandedContext
@@ -65,14 +68,14 @@ def assert_all_expansions_backed_by_real_relationships(
                 )
             verified_edge_count += 1
 
-        # 2. Outgoing CALLS check (also covers INSTANTIATES — expander traverses both)
+        # 2. Outgoing CALLS check
         for called in exp.called_entities:
             c_rel = db_session.scalars(
                 select(RelationshipModel).where(
                     RelationshipModel.repo_id == repo_id,
                     RelationshipModel.source_id == called.called_via,
                     RelationshipModel.target_id == called.entity.id,
-                    RelationshipModel.type.in_(["CALLS", "INSTANTIATES"]),
+                    RelationshipModel.type == "CALLS",
                 )
             ).first()
             if not c_rel:

@@ -1,18 +1,10 @@
-"""
-Live end-to-end test: POST /repositories/<repo_id>/ask
+"""Pillar 4 + 5 — Answer Quality & Citation Quality
+Tests the full pipeline through the HTTP API across 4 canonical evaluation questions.
+  vector search → graph expansion → LiteLLM (Groq primary / Gemini fallback) → citation validation
+Canonical location: evaluation/scripts/pillar45_ask.py
 
-Tests the full pipeline through the HTTP API:
-  vector search → graph expansion → LiteLLM (Groq primary / Gemini fallback)
-  → citation validation
-
-Evaluation canonical questions (Pillars 4 + 5):
-  Q1 — login flow end-to-end
-  Q2 — AdminUser inheritance + permission checking
-  Q3 — functions with no dependencies on other code
-  Q4 — what does the validate method do?
-
-Usage (from platform/):
-    python tests/test_ask_endpoint.py --repo-id <uuid>
+Usage (from EasyRepo/):
+    python evaluation/scripts/pillar45_ask.py --repo-id <uuid>
 """
 
 import argparse
@@ -35,7 +27,7 @@ QUESTIONS = [
     {
         "id": "Q2",
         "text": "What does AdminUser inherit and how does permission checking work?",
-        "key_entities": ["AdminUser", "UserModel", "BaseModel", "has_permission"],
+        "key_entities": ["AdminUser", "UserModel", "BaseModel", "check_permission"],
     },
     {
         "id": "Q3",
@@ -139,7 +131,7 @@ def run(repo_id: str) -> bool:
         print("\n  COMPLETENESS CHECK (key entities in answer):")
         for entity in q_def["key_entities"]:
             found = entity.lower() in answer.lower()
-            mark = "YES" if found else "NO"
+            mark = "✓" if found else "✗"
             print(f"    [{mark}] {entity}")
 
     # ── Summary table ─────────────────────────────────────────────────────────
@@ -183,7 +175,7 @@ def run(repo_id: str) -> bool:
     for r in results:
         if r["hallucination_rate"] > 0.0:
             failures.append(
-                f"{r['q_id']}: hallucination_rate={r['hallucination_rate']:.1%} -- must be 0.0%"
+                f"{r['q_id']}: hallucination_rate={r['hallucination_rate']:.1%} — must be 0.0%"
             )
 
     if total_citations > 0 and overall_rate > 0.0:
@@ -207,10 +199,10 @@ def run(repo_id: str) -> bool:
     if failures:
         print("FAILED:")
         for f in failures:
-            print(f"  [FAIL] {f}")
+            print(f"  ✗ {f}")
         return False
     else:
-        print("ALL ASSERTIONS PASSED")
+        print("ALL ASSERTIONS PASSED ✓")
         print()
         print(f"  - Provider used: {', '.join(sorted(providers_used))}")
         print(f"  - Real citations validated: {total_verified} verified")

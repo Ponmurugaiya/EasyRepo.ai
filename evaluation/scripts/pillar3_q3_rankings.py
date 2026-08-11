@@ -1,20 +1,23 @@
-"""Script to analyze vector search rankings for the Q3 disambiguation query.
+"""Pillar 3 — Q3 Ranking Detail
+Prints full ranked entity list for the Q3 disambiguation query with score gap analysis.
+Canonical location: evaluation/scripts/pillar3_q3_rankings.py
 
-Q3: "Is there any function in this codebase that has no dependencies on other code?"
-
-Prints the full ranked entity list with cosine similarity scores so you can inspect
-the score gap between isolated entities and non-isolated ones.
-
-Usage (from platform/):
-    python scripts/analyze_q3_rankings.py --repo-id <uuid>
+Usage (from EasyRepo/):
+    python evaluation/scripts/pillar3_q3_rankings.py --repo-id <uuid>
 """
 import argparse
 import os
 import sys
 from pathlib import Path
 
-# Load .env from repo root (two levels up: scripts/ -> platform/ -> repo root)
-_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+# ── Path setup: evaluation/scripts/ → evaluation/ → EasyRepo/ → EasyRepo/platform/ ──
+_HERE = Path(__file__).resolve()
+_PLATFORM_DIR = _HERE.parent.parent.parent / "platform"
+if str(_PLATFORM_DIR) not in sys.path:
+    sys.path.insert(0, str(_PLATFORM_DIR))
+
+# ── Load .env from EasyRepo root ──
+_ENV_PATH = _HERE.parent.parent.parent / ".env"
 if _ENV_PATH.exists():
     with open(_ENV_PATH, encoding="utf-8") as _f:
         for _line in _f:
@@ -22,8 +25,6 @@ if _ENV_PATH.exists():
             if _line and "=" in _line and not _line.startswith("#"):
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.retrieval import search
 from src.storage.db import get_session
@@ -57,7 +58,7 @@ def run(db_url: str, repo_id: str) -> None:
         # Score gap between rank-1 and rank-2
         if len(results) >= 2:
             gap = results[0].score - results[1].score
-            print(f"\nScore gap rank-1 vs rank-2: {gap:.4f} (target: >= 0.02)")
+            print(f"\nScore gap rank-1 vs rank-2: {gap:.4f} (target: ≥ 0.02)")
             if gap >= 0.02:
                 print("RANKING CHECK PASSED: format_audit_log has sufficient score gap over rank-2")
             else:

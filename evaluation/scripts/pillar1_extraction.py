@@ -1,10 +1,20 @@
+"""Pillar 1 — Extraction Quality
+Validates Tree-sitter extraction against the hand-built ground-truth manifest.
+Canonical location: evaluation/scripts/pillar1_extraction.py
+
+Usage (from EasyRepo/):
+    python evaluation/scripts/pillar1_extraction.py
+"""
+
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Any, Tuple, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-# Ensure platform/ is in sys.path
-PLATFORM_DIR = Path(__file__).resolve().parent.parent
+# ── Path setup: evaluation/scripts/ → evaluation/ → EasyRepo/ → EasyRepo/platform/ ──
+_HERE = Path(__file__).resolve()
+PLATFORM_DIR = _HERE.parent.parent.parent / "platform"
+REPO_ROOT = _HERE.parent.parent.parent
 if str(PLATFORM_DIR) not in sys.path:
     sys.path.insert(0, str(PLATFORM_DIR))
 
@@ -14,15 +24,11 @@ from src.languages import ADAPTER_REGISTRY
 
 
 def get_entity_key(ent: Dict[str, Any]) -> Tuple[str, str, str]:
-    # Use the unique entity ID as the primary key component to avoid
-    # collisions when two parent functions have variables with the same name
-    # in the same file (e.g. format_user_record.lines vs format_audit_log.lines).
-    eid = ent.get("id", "")
-    return (ent["file_path"], eid if eid else ent["name"], ent["type"])
+    return (ent["file_path"], ent["name"], ent["type"])
 
 
 def validate():
-    repo_path = PLATFORM_DIR.parent / "sample-repo"
+    repo_path = REPO_ROOT / "sample-repo"
     manifest_path = repo_path / "test-manifest.json"
 
     if not manifest_path.exists():
@@ -35,9 +41,7 @@ def validate():
     manifest_entities = manifest_data.get("entities", [])
     manifest_rels = manifest_data.get("relationships", [])
 
-    # ---------------------------------------------------------------
-    # Extract
-    # ---------------------------------------------------------------
+    # ── Extract ───────────────────────────────────────────────────────────────
     extractor = EntityExtractor()
     extracted_entities_objs, extracted_contains_objs = extractor.extract_repository(
         str(repo_path)
@@ -55,9 +59,7 @@ def validate():
     print("VALIDATION REPORT AGAINST TEST MANIFEST")
     print("=" * 60)
 
-    # ---------------------------------------------------------------
-    # Entity key maps
-    # ---------------------------------------------------------------
+    # ── Entity key maps ───────────────────────────────────────────────────────
     manifest_ent_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     manifest_id_to_key: Dict[str, Tuple[str, str, str]] = {}
     for ent in manifest_entities:
@@ -141,9 +143,7 @@ def validate():
         for mismatch in docstring_mismatches:
             print(mismatch)
 
-    # ---------------------------------------------------------------
-    # Relationship comparison helper
-    # ---------------------------------------------------------------
+    # ── Relationship comparison ───────────────────────────────────────────────
     def make_rel_key(
         rel: Dict[str, Any],
         id_to_key: Dict[str, Tuple[str, str, str]],
@@ -161,7 +161,6 @@ def validate():
         manifest_id_to_key: Dict[str, Tuple[str, str, str]],
         extracted_id_to_key: Dict[str, Tuple[str, str, str]],
     ) -> Tuple[int, int, int, int, List[str], List[str]]:
-        """Returns matched, missing, extra counts and detail lists."""
         m_rels = [r for r in manifest_rels_all if r["type"] == rel_type]
         e_rels = [r for r in extracted_rels_all if r["type"] == rel_type]
 
@@ -186,9 +185,6 @@ def validate():
 
         return len(m_rels), len(e_rels), len(matched), len(missing), missing_strs, extra_strs
 
-    # ---------------------------------------------------------------
-    # Compare each relationship type
-    # ---------------------------------------------------------------
     rel_types = ["CONTAINS", "IMPORTS", "CALLS", "INHERITS", "IMPLEMENTS"]
     print()
     all_rel_success = True
@@ -220,9 +216,7 @@ def validate():
             if rtype in ("CONTAINS", "CALLS", "IMPORTS", "INHERITS", "IMPLEMENTS"):
                 all_rel_success = False
 
-    # ---------------------------------------------------------------
-    # Final summary
-    # ---------------------------------------------------------------
+    # ── Final summary ─────────────────────────────────────────────────────────
     entity_match_rate = (len(matched_keys) / len(manifest_entities) * 100) if manifest_entities else 0
     is_entity_success = (
         len(missing_keys) == 0
@@ -241,6 +235,7 @@ def validate():
               f"(manifest={m_total}, extracted={e_total}, matched={matched})")
     print(f"  - Line Range Mismatches:       {len(line_range_mismatches)}")
     print(f"  - Parent Structure Mismatches: {len(parent_mismatches)}")
+    print(f"  - Docstring Flag Mismatches:   {len(docstring_mismatches)}")
     print("=" * 60)
 
     if is_entity_success and all_rel_success:

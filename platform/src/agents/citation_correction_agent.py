@@ -286,9 +286,26 @@ def run(
         )
 
     # ── Re-validate corrected answer ─────────────────────────────────────────
+    # Augment context_entities with any DB entities that were looked up during
+    # the deterministic pass — they're now cited in the corrected answer and
+    # must be present so re-validation can match them.
+    augmented_entities = list(context_entities)
+    if db_session:
+        seen_ids = {e.id for e in augmented_entities}
+        for mismatch in report.unsupported_citations:
+            if mismatch.nearest_entity_id and mismatch.nearest_entity_id not in seen_ids:
+                try:
+                    from src.storage.models import EntityModel
+                    ent = db_session.query(EntityModel).filter_by(id=mismatch.nearest_entity_id).first()
+                    if ent:
+                        augmented_entities.append(ent)
+                        seen_ids.add(ent.id)
+                except Exception:
+                    pass
+
     new_report = validate_citations(
         answer=corrected,
-        context_entities=context_entities,
+        context_entities=augmented_entities,
         final_context=final_context,
         db_session=db_session,
     )

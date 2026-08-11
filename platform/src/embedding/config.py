@@ -23,7 +23,10 @@ import os
 VOYAGE_API_KEY: str = os.environ.get("VOYAGE_API_KEY", "")
 VOYAGE_MODEL: str = "voyage-code-3"
 EMBEDDING_DIM: int = 1024
-BATCH_SIZE: int = 128        # Voyage API accepts up to 128 texts per request
+# Free tier: 3 RPM, 10K TPM. Each code entity ~100-300 tokens.
+# Batch of 8 ≈ ~1.5K tokens → well under 10K TPM per call.
+# VOYAGE_BATCH_SIZE env var overrides (set higher once payment added).
+BATCH_SIZE: int = int(os.environ.get("VOYAGE_BATCH_SIZE", "8"))
 INPUT_TYPE: str = "document" # "document" for indexing, "query" for search queries
 
 # Legacy — kept so existing imports of MODEL_NAME don't break at the module level
