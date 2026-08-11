@@ -63,4 +63,6 @@ export interface RepoSession {
   entityCount: number;
   relationshipCount: number;
   indexedAt: string | null;
+  /** Human-readable progress or failure reason from the backend. */
+  progressMessage?: string | null;
 }

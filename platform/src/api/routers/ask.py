@@ -34,6 +34,11 @@ from src.generation import (
     validate_citations,
 )
 from src.generation.citation_validator import collect_context_entities
+from src.generation.llm_client import (
+    LLMProviderError,
+    LLMQuotaExhaustedError,
+    LLMAuthError,
+)
 from src.pipeline.orchestrator import run_pipeline
 from src.storage.models import UserModel
 
@@ -101,10 +106,13 @@ async def ask_repository(
     if repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Repository '{repo_id}' is not ready for querying "
-                f"(status: {repo.status})"
-            ),
+            detail={
+                "detail": (
+                    f"Repository '{repo_id}' is not ready for querying "
+                    f"(status: {repo.status})"
+                ),
+                "error_code": "repo_not_ready",
+            },
         )
 
     # ── API keys — LiteLLM reads env vars directly; we pass explicit keys only
@@ -150,10 +158,41 @@ async def ask_repository(
             skip_groq=skip_groq,
             skip_gemini=skip_gemini,
         )
+    except LLMAuthError as e:
+        logger.error("LLM auth error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "detail": "There's a configuration issue on our end. Please contact support if this persists.",
+                "error_code": e.error_code,
+            },
+        ) from e
+    except LLMQuotaExhaustedError as e:
+        logger.warning("All LLM providers quota-exhausted: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "detail": "Our AI providers are currently over capacity. Please try again in a few minutes.",
+                "error_code": e.error_code,
+            },
+        ) from e
+    except LLMProviderError as e:
+        logger.error("LLM provider error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "detail": "Something went wrong while processing your question. Please try again.",
+                "error_code": e.error_code,
+            },
+        ) from e
     except Exception as e:
+        logger.error("Pipeline unexpected error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Pipeline failed: {e}",
+            detail={
+                "detail": "Something went wrong on our end. Please try again.",
+                "error_code": "pipeline_error",
+            },
         ) from e
 
     answer = pipeline_result.stm.answer_text or ""

@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useChatStore } from "@/store/chat-store";
 import { useAuthStore } from "@/store/auth-store";
 import { askRepository, ApiError } from "@/lib/api";
+import { friendlyMessage } from "@/lib/errors";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { EmptyState } from "./empty-state";
@@ -135,7 +136,9 @@ export function ChatWindow({ repo }: ChatWindowProps) {
           return;
         }
         const msg =
-          err instanceof Error ? err.message : "Request failed. Please try again.";
+          err instanceof ApiError
+            ? friendlyMessage(err)
+            : "Something went wrong. Please try again.";
         setErrorMessage(repo.repoId, loadingId, msg);
       } finally {
         // Safety net: clear the controller so the ref doesn't hold a stale abort

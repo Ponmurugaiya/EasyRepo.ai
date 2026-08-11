@@ -60,6 +60,28 @@ def _is_url(source: str) -> bool:
     return bool(_URL_RE.match(source.strip()))
 
 
+def _friendly_ingest_error(exc: Exception) -> str:
+    """Map a raw pipeline exception to a clean, user-facing progress message."""
+    msg = str(exc).lower()
+
+    if "rate limit" in msg or "429" in msg or "too many" in msg:
+        return "Indexing paused — embedding service rate limit reached. Try re-indexing shortly."
+    if "voyage" in msg and any(k in msg for k in ("auth", "401", "invalid", "forbidden")):
+        return "Indexing failed — Voyage AI key is invalid or missing. Check your configuration."
+    if "voyage_api_key" in msg or "voyage api key" in msg:
+        return "Indexing failed — VOYAGE_API_KEY is not set. Add it to your .env file."
+    if "git clone" in msg or "clone failed" in msg:
+        return "Could not clone the repository. Check the URL and try again."
+    if "does not exist" in msg or "no such file" in msg:
+        return "Repository path not found. Check the URL or local path."
+    if "timeout" in msg or "timed out" in msg:
+        return "Indexing timed out. The repository may be too large — try again."
+    if "voyage embed failed after max retries" in msg:
+        return "Indexing failed — Voyage AI embedding retries exhausted. Try again in a few minutes."
+
+    return "Indexing failed. Try re-indexing the repository."
+
+
 def _clone(url: str, progress_cb) -> str:
     """Clone *url* into a fresh temp directory and return its path."""
     tmp = tempfile.mkdtemp(prefix="easyrepo_")
@@ -306,7 +328,7 @@ def ingest_repository(
         repo = db_session.query(RepositoryModel).filter_by(id=repo_id).first()
         if repo:
             repo.status = "failed"
-            repo.progress_message = f"Failed: {str(exc)[:200]}"
+            repo.progress_message = _friendly_ingest_error(exc)
             db_session.commit()
         raise
 

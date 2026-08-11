@@ -41,7 +41,7 @@ export function RepoItem({
     setReindexing(true);
     try {
       await ingestRepository(repo.repoUrl);
-      updateRepoSession(repo.repoId, { status: "indexing" });
+      updateRepoSession(repo.repoId, { status: "indexing", progressMessage: null });
 
       for (let i = 0; i < 300; i++) {
         await new Promise((r) => setTimeout(r, 2000));
@@ -53,11 +53,23 @@ export function RepoItem({
             entityCount: full.entity_count ?? 0,
             relationshipCount: full.relationship_count ?? 0,
             indexedAt: full.indexed_at,
+            progressMessage: null,
           });
           if (graphRepoId === repo.repoId) refreshGraph();
           break;
         }
-        if (s.status === "failed") break;
+        if (s.status === "failed") {
+          updateRepoSession(repo.repoId, {
+            status: s.status,
+            progressMessage: s.progress_message,
+          });
+          break;
+        }
+        // Still indexing — update progress message for live status display
+        updateRepoSession(repo.repoId, {
+          status: s.status,
+          progressMessage: s.progress_message,
+        });
       }
     } catch {
       // status badge will show failed
@@ -136,6 +148,18 @@ export function RepoItem({
           {reindexing && (
             <p className="mt-0.5 text-[10px] text-blue-400 animate-pulse">
               Re-indexing…
+            </p>
+          )}
+
+          {/* Failure reason — shown under the repo name when indexing fails */}
+          {!reindexing && repo.status === "failed" && repo.progressMessage && (
+            <p
+              className="mt-1 text-[10px] leading-tight text-red-400"
+              title={repo.progressMessage}
+            >
+              {repo.progressMessage.length > 72
+                ? repo.progressMessage.slice(0, 69) + "…"
+                : repo.progressMessage}
             </p>
           )}
         </div>

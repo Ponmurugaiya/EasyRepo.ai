@@ -157,6 +157,28 @@ ALL_FREE_MODELS: list[tuple[str, str]] = [(m.model_id, m.provider) for m in ALL_
 class LLMProviderError(RuntimeError):
     """Raised when every configured model is unavailable or quota-exhausted."""
 
+    #: Machine-readable code forwarded to the HTTP layer as ``error_code``.
+    error_code: str = "pipeline_error"
+
+
+class LLMQuotaExhaustedError(LLMProviderError):
+    """All configured LLM providers are over their quota / rate limit."""
+
+    error_code = "llm_quota_exhausted"
+
+
+class LLMRateLimitedError(LLMProviderError):
+    """A transient rate-limit hit; the cascade may recover on the next try."""
+
+    error_code = "llm_rate_limited"
+
+
+class LLMAuthError(LLMProviderError):
+    """API key invalid, missing, or rejected by the provider."""
+
+    error_code = "llm_auth_error"
+
+
 GeminiClientError = LLMProviderError   # backwards-compat alias
 GroqClientError   = LLMProviderError   # backwards-compat alias
 
@@ -493,7 +515,7 @@ def smart_complete(
     )
 
     if not candidates:
-        raise LLMProviderError(
+        raise LLMQuotaExhaustedError(
             f"No models available for task_type={resolved_task!r}, "
             f"context={estimated_tokens} tokens. "
             "Check that API keys are set and quota is not exhausted."
@@ -573,11 +595,20 @@ def smart_complete(
                 "Router: %s non-recoverable failure (%s) — NOT advancing cascade",
                 spec.model_id, type(exc).__name__,
             )
+            # Detect auth-specific errors for a more actionable error code
+            is_auth_err = any(k in err_msg for k in (
+                "401", "403", "unauthorized", "forbidden",
+                "invalid api key", "authentication", "invalid_api_key",
+            ))
+            if is_auth_err:
+                raise LLMAuthError(
+                    f"API key for {spec.provider!r} is invalid or rejected: {exc}"
+                ) from exc
             raise LLMProviderError(
                 f"Model {spec.model_id} failed with a non-recoverable error: {exc}"
             ) from exc
 
-    raise LLMProviderError(
+    raise LLMQuotaExhaustedError(
         "All available models are quota-exhausted or unavailable.\n"
         + "\n".join(f"  {e}" for e in errors)
     )

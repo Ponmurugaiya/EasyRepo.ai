@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -307,6 +308,25 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ── Custom exception handler ──────────────────────────────────────────────────
+# When ask.py raises HTTPException(detail={"detail": "...", "error_code": "..."})
+# this handler flattens it so the JSON body always has top-level `detail` and
+# optional `error_code` keys — matching what the frontend ApiError parser reads.
+# Plain string details (all other routers) pass through unchanged.
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if isinstance(exc.detail, dict):
+        content = {
+            "detail": exc.detail.get("detail", str(exc.detail)),
+        }
+        if "error_code" in exc.detail:
+            content["error_code"] = exc.detail["error_code"]
+    else:
+        content = {"detail": exc.detail}
+    return JSONResponse(status_code=exc.status_code, content=content, headers=dict(exc.headers or {}))
+
 
 # Attach the rate-limiter state and its 429 handler
 app.state.limiter = _limiter
