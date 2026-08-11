@@ -2,14 +2,16 @@
 
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PanelLeft, ExternalLink, FileSearch, Zap } from "lucide-react";
+import { PanelLeft, ExternalLink, FileSearch, Zap, LogIn, User } from "lucide-react";
 import { useChatStore } from "@/store/chat-store";
+import { useAuthStore } from "@/store/auth-store";
 import { truncate, cn } from "@/lib/utils";
 import type { RepoSession } from "@/types/chat";
 
 interface ChatHeaderProps {
   repo: RepoSession;
   onClear: () => void;
+  onLoginClick: () => void;
 }
 
 const iconBtn = cn(
@@ -18,8 +20,9 @@ const iconBtn = cn(
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
 );
 
-export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
+export function ChatHeader({ repo, onClear, onLoginClick }: ChatHeaderProps) {
   const { sidebarOpen, setSidebarOpen } = useChatStore();
+  const { isLoggedIn, cognitoUser, loginMode } = useAuthStore();
   const isGitHub = /github\.com/i.test(repo.repoUrl);
 
   return (
@@ -89,6 +92,44 @@ export function ChatHeader({ repo, onClear }: ChatHeaderProps) {
             <TooltipContent>View on GitHub</TooltipContent>
           </Tooltip>
         )}
+
+        {/* Login / Profile button */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                className={cn(
+                  iconBtn,
+                  isLoggedIn
+                    ? "text-green-400 hover:text-green-300"
+                    : "text-blue-400 hover:text-blue-300"
+                )}
+                onClick={onLoginClick}
+                aria-label={isLoggedIn ? "Account" : "Sign in"}
+              >
+                {isLoggedIn && loginMode === "cognito" && cognitoUser?.picture ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={cognitoUser.picture}
+                    alt={cognitoUser.name ?? cognitoUser.email}
+                    className="h-5 w-5 rounded-full object-cover"
+                  />
+                ) : isLoggedIn ? (
+                  <User className="h-4 w-4" />
+                ) : (
+                  <LogIn className="h-4 w-4" />
+                )}
+              </button>
+            }
+          />
+          <TooltipContent>
+            {isLoggedIn
+              ? loginMode === "cognito"
+                ? cognitoUser?.name ?? "Signed in"
+                : "Dev logged in"
+              : "Sign in"}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </header>
   );

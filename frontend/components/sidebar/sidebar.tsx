@@ -7,7 +7,8 @@ import { useGraphStore } from "@/store/graph-store";
 import { useAuthStore } from "@/store/auth-store";
 import { RepoItem } from "./repo-item";
 import { DevLoginModal } from "@/components/auth/dev-login-modal";
-import { Bot, ChevronLeft, MessageSquare, GitBranch, KeyRound, SquarePen } from "lucide-react";
+import { CognitoLoginModal } from "@/components/auth/cognito-login-modal";
+import { Bot, ChevronLeft, MessageSquare, GitBranch, LogIn, User, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type SidebarTab = "chat" | "graph";
@@ -30,7 +31,7 @@ export function Sidebar() {
     closeGraph,
   } = useGraphStore();
 
-  const { isLoggedIn } = useAuthStore();
+  const { isLoggedIn, loginMode, cognitoUser } = useAuthStore();
   const [loginOpen, setLoginOpen] = useState(false);
 
   // Active tab: if graph panel is open, show graph tab as active
@@ -180,11 +181,13 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* ── Tab hint + Dev login ── */}
+        {/* ── Tab hint + Login ── */}
         <div className="px-4 py-3 border-t border-zinc-800 space-y-2">
           <p className="text-xs text-zinc-600">
             {activeTab === "chat"
-              ? "Repos saved locally · no login required"
+              ? isLoggedIn
+                ? "Chat history is saved permanently"
+                : "Temporary session · sign in to save history"
               : "Click a repo to view its code graph"}
           </p>
           <button
@@ -193,15 +196,33 @@ export function Sidebar() {
               "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
               isLoggedIn
                 ? "text-green-400 hover:text-green-300 hover:bg-green-900/20"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+                : "text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
             )}
           >
-            <KeyRound className="h-3.5 w-3.5 shrink-0" />
-            {isLoggedIn ? "Dev logged in · persistent history" : "Dev login"}
+            {isLoggedIn ? (
+              loginMode === "cognito" && cognitoUser?.picture ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={cognitoUser.picture}
+                  alt=""
+                  className="h-3.5 w-3.5 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <User className="h-3.5 w-3.5 shrink-0" />
+              )
+            ) : (
+              <LogIn className="h-3.5 w-3.5 shrink-0" />
+            )}
+            {isLoggedIn
+              ? loginMode === "cognito"
+                ? cognitoUser?.name ?? cognitoUser?.email ?? "Signed in"
+                : "Dev logged in · persistent history"
+              : "Sign in with Google"}
           </button>
         </div>
 
-        <DevLoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+        <DevLoginModal open={loginOpen && loginMode === "dev"} onClose={() => setLoginOpen(false)} />
+        <CognitoLoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
       </aside>
     </>
   );
