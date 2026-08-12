@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { LogIn, Chrome, Loader2 } from "lucide-react";
+import { LogIn, Loader2 } from "lucide-react";
 
 interface CognitoLoginModalProps {
   open: boolean;

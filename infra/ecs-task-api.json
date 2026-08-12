@@ -1,0 +1,51 @@
+{
+  "family": "easyrepo-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::786830914531:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "786830914531.dkr.ecr.us-east-1.amazonaws.com/easyrepo-backend:latest",
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "command": ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"],
+      "environment": [
+        { "name": "AUTH_ENABLED",             "value": "true" },
+        { "name": "CORS_ALLOWED_ORIGINS",      "value": "AMPLIFY_URL_PLACEHOLDER" },
+        { "name": "LOG_TO_FILE",               "value": "false" },
+        { "name": "PIPELINE_LOG_LEVEL",        "value": "INFO" },
+        { "name": "GROQ_MODEL",                "value": "llama-3.3-70b-versatile" },
+        { "name": "VOYAGE_BATCH_SIZE",         "value": "4" },
+        { "name": "VOYAGE_BATCH_DELAY_SECS",   "value": "21" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL",          "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/DATABASE_URL" },
+        { "name": "REDIS_URL",             "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/REDIS_URL" },
+        { "name": "GEMINI_API_KEY",        "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/GEMINI_API_KEY" },
+        { "name": "GROQ_API_KEY",          "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/GROQ_API_KEY" },
+        { "name": "VOYAGE_API_KEY",        "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/VOYAGE_API_KEY" },
+        { "name": "CEREBRAS_API_KEY",      "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/CEREBRAS_API_KEY" },
+        { "name": "OPENROUTER_API_KEY",    "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/OPENROUTER_API_KEY" },
+        { "name": "COHERE_API_KEY",        "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/COHERE_API_KEY" },
+        { "name": "CLOUDFLARE_API_KEY",    "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/CLOUDFLARE_API_KEY" },
+        { "name": "CLOUDFLARE_ACCOUNT_ID", "valueFrom": "arn:aws:ssm:us-east-1:786830914531:parameter/easyrepo/CLOUDFLARE_ACCOUNT_ID" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/easyrepo-api",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3
+      }
+    }
+  ]
+}
