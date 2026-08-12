@@ -6,10 +6,9 @@ frontend:
         - nvm install 22
         - nvm use 22
         - node --version
-        - cd frontend && npm ci
     build:
       commands:
-        - cd frontend && npm run build
+        - cd frontend && npm ci && npm run build
   artifacts:
     baseDirectory: frontend/out
     files:
