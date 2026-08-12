@@ -1,13 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
-import { cn, truncate } from "@/lib/utils";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { cn, truncate } from "../../lib/utils";
+import { StatusBadge } from "../../components/ui/status-badge";
 import { MessageSquare, GitBranch, RefreshCw } from "lucide-react";
-import { ingestRepository, getRepositoryStatus, getRepository } from "@/lib/api";
-import { useChatStore } from "@/store/chat-store";
-import { useGraphStore } from "@/store/graph-store";
-import type { RepoSession } from "@/types/chat";
+import { ingestRepository, getRepositoryStatus, getRepository } from "../../lib/api";
+import { useChatStore } from "../../store/chat-store";
+import { useGraphStore } from "../../store/graph-store";
+import type { RepoSession } from "../../types/chat";
 
 interface RepoItemProps {
   repo: RepoSession;

@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
-import type { RepoStatus } from "@/types/api";
+﻿import { cn } from "../../lib/utils";
+import type { RepoStatus } from "../../types/api";
 
 const config: Record<
   RepoStatus,

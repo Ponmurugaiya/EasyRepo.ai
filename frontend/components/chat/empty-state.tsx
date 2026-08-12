@@ -1,7 +1,7 @@
 "use client";
 
 import { Bot, GitBranch, Zap, FileSearch } from "lucide-react";
-import type { RepoSession } from "@/types/chat";
+import type { RepoSession } from "../../types/chat";
 
 interface EmptyStateProps {
   repo: RepoSession;

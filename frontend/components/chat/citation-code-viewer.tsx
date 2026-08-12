@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { X, FileCode2, Loader2, AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { getEntitySource } from "@/lib/api";
-import type { ResolvedCitation } from "@/lib/citations";
-import type { EntitySourceResponse } from "@/types/api";
+import { cn } from "../../lib/utils";
+import { getEntitySource } from "../../lib/api";
+import type { ResolvedCitation } from "../../lib/citations";
+import type { EntitySourceResponse } from "../../types/api";
 
 interface CitationCodeViewerProps {
   repoId: string;

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 import { ChevronDown, CheckCircle2, AlertCircle, FileCode2, GitBranch } from "lucide-react";
-import type { ValidationReport } from "@/types/api";
-import type { ResolvedCitation } from "@/lib/citations";
+import type { ValidationReport } from "../../types/api";
+import type { ResolvedCitation } from "../../lib/citations";
 
 interface CitationPanelProps {
   citations: ValidationReport;

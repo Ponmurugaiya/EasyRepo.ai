@@ -7,8 +7,8 @@ import {
   getBezierPath,
   type EdgeProps,
 } from "reactflow";
-import { cn } from "@/lib/utils";
-import type { EntityConnection } from "@/types/graph";
+import { cn } from "../../lib/utils";
+import type { EntityConnection } from "../../types/graph";
 
 // Edge color by dominant relationship type
 const EDGE_COLOR: Record<string, string> = {

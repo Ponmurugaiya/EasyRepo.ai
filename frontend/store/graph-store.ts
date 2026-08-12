@@ -1,11 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 // Graph store — file-level code graph panel state
 // Entities are embedded in graphData.nodes — no separate expand/collapse needed
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { FileGraphResponse } from "@/types/graph";
-import { getFileGraph } from "@/lib/graph-api";
+import type { FileGraphResponse } from "../types/graph";
+import { getFileGraph } from "../lib/graph-api";
 
 interface GraphState {
   isOpen: boolean;

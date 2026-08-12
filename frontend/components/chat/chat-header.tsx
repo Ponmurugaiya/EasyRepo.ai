@@ -1,12 +1,12 @@
 "use client";
 
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { StatusBadge } from "../../components/ui/status-badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { PanelLeft, ExternalLink, FileSearch, Zap, LogIn, User } from "lucide-react";
-import { useChatStore } from "@/store/chat-store";
-import { useAuthStore } from "@/store/auth-store";
-import { truncate, cn } from "@/lib/utils";
-import type { RepoSession } from "@/types/chat";
+import { useChatStore } from "../../store/chat-store";
+import { useAuthStore } from "../../store/auth-store";
+import { truncate, cn } from "../../lib/utils";
+import type { RepoSession } from "../../types/chat";
 
 interface ChatHeaderProps {
   repo: RepoSession;

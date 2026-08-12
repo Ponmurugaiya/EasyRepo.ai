@@ -3,8 +3,8 @@
 import { memo, useRef, useEffect } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import { ChevronDown, ChevronRight, FileCode2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { FileNode, InlineEntity } from "@/types/graph";
+import { cn } from "../../lib/utils";
+import type { FileNode, InlineEntity } from "../../types/graph";
 
 // ── Language styling ──────────────────────────────────────────────────────────
 

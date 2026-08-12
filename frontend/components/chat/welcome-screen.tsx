@@ -1,10 +1,10 @@
 "use client";
 
 import { Bot, GitBranch, MessageSquare, Zap, ShieldCheck, Plus, FileSearch } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useChatStore } from "@/store/chat-store";
-import { AddRepoButton } from "@/components/sidebar/add-repo-button";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "../../components/ui/button";
+import { useChatStore } from "../../store/chat-store";
+import { AddRepoButton } from "../../components/sidebar/add-repo-button";
+import { StatusBadge } from "../../components/ui/status-badge";
 
 const FEATURES = [
   {

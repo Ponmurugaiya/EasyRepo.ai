@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuthStore } from "@/store/auth-store";
-import { useChatStore } from "@/store/chat-store";
-import { listRepositories } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { useAuthStore } from "../../store/auth-store";
+import { useChatStore } from "../../store/chat-store";
+import { listRepositories } from "../../lib/api";
+import { Button } from "../../components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
+} from "../../components/ui/dialog";
 import { LogIn, Loader2 } from "lucide-react";
 
 interface CognitoLoginModalProps {
@@ -38,7 +38,7 @@ export function CognitoLoginModal({
     async function checkSession() {
       try {
         const { configureCognito, getCognitoUser, getCognitoToken } = await import(
-          "@/lib/cognito"
+          "../../lib/cognito"
         );
         const configured = configureCognito();
         if (!configured) return; // Cognito env vars not set yet
@@ -77,7 +77,7 @@ export function CognitoLoginModal({
     setLoading(true);
     setError(null);
     try {
-      const { configureCognito, signInWithGoogle } = await import("@/lib/cognito");
+      const { configureCognito, signInWithGoogle } = await import("../../lib/cognito");
       const configured = configureCognito();
       if (!configured) {
         setError(
@@ -97,7 +97,7 @@ export function CognitoLoginModal({
   async function handleSignOut() {
     setLoading(true);
     try {
-      const { configureCognito, signOutCognito } = await import("@/lib/cognito");
+      const { configureCognito, signOutCognito } = await import("../../lib/cognito");
       configureCognito();
       await signOutCognito();
     } catch {

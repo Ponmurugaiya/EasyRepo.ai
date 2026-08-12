@@ -1,21 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { useAuthStore } from "@/store/auth-store";
-import { useChatStore } from "@/store/chat-store";
-import { listRepositories } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useAuthStore } from "../../store/auth-store";
+import { useChatStore } from "../../store/chat-store";
+import { listRepositories } from "../../lib/api";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog";
+} from "../../components/ui/dialog";
 import { KeyRound, LogOut, ExternalLink, Copy, Check } from "lucide-react";
-import { getHealth } from "@/lib/api";
+import { getHealth } from "../../lib/api";
 
 interface DevLoginModalProps {
   open: boolean;

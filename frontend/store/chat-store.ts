@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 // Chat store — manages conversations and repo sessions in memory
 // repoSessions and activeRepoId are persisted to localStorage so the sidebar
 // survives browser refresh without re-adding repos.
@@ -11,8 +11,8 @@ import type {
   ChatMessage,
   Conversation,
   RepoSession,
-} from "@/types/chat";
-import type { AskResponse, RepositoryResponse } from "@/types/api";
+} from "../types/chat";
+import type { AskResponse, RepositoryResponse } from "../types/api";
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);

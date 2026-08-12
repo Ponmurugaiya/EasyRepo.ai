@@ -1,16 +1,16 @@
 "use client";
 
-import { useChatStore } from "@/store/chat-store";
-import { useGraphStore } from "@/store/graph-store";
-import { Sidebar } from "@/components/sidebar/sidebar";
-import { ChatWindow } from "@/components/chat/chat-window";
-import { WelcomeScreen } from "@/components/chat/welcome-screen";
-import { GraphPanel } from "@/components/graph/graph-panel";
-import { CitationCodeViewer } from "@/components/chat/citation-code-viewer";
-import { Button } from "@/components/ui/button";
+import { useChatStore } from "../store/chat-store";
+import { useGraphStore } from "../store/graph-store";
+import { Sidebar } from "../components/sidebar/sidebar";
+import { ChatWindow } from "../components/chat/chat-window";
+import { WelcomeScreen } from "../components/chat/welcome-screen";
+import { GraphPanel } from "../components/graph/graph-panel";
+import { CitationCodeViewer } from "../components/chat/citation-code-viewer";
+import { Button } from "../components/ui/button";
 import { PanelLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ResolvedCitation } from "@/lib/citations";
+import type { ResolvedCitation } from "../lib/citations";
 
 interface GraphEntityView {
   entityId: string;

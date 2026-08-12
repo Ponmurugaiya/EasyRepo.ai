@@ -18,11 +18,11 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 
 import { X, RefreshCw, Loader2, AlertTriangle, GitBranch, Maximize2, Minimize2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useGraphStore } from "@/store/graph-store";
-import { applyDagreLayout, NODE_WIDTH, nodeHeight } from "@/lib/graph-layout";
+import { cn } from "../../lib/utils";
+import { useGraphStore } from "../../store/graph-store";
+import { applyDagreLayout, NODE_WIDTH, nodeHeight } from "../../lib/graph-layout";
 import { NODE_TYPES, EDGE_TYPES } from "./graph-types";
-import type { FileNode, InlineEntity } from "@/types/graph";
+import type { FileNode, InlineEntity } from "../../types/graph";
 import type { FileNodeData } from "./file-node";
 import type { GraphEdgeData } from "./graph-edge";
 

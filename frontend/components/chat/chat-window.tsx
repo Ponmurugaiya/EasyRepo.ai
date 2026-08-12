@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useChatStore } from "@/store/chat-store";
-import { useAuthStore } from "@/store/auth-store";
-import { askRepository, ApiError } from "@/lib/api";
-import { friendlyMessage } from "@/lib/errors";
+import { useChatStore } from "../../store/chat-store";
+import { useAuthStore } from "../../store/auth-store";
+import { askRepository, ApiError } from "../../lib/api";
+import { friendlyMessage } from "../../lib/errors";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { EmptyState } from "./empty-state";
 import { ChatHeader } from "./chat-header";
 import { GuestBanner } from "./guest-banner";
-import { CognitoLoginModal } from "@/components/auth/cognito-login-modal";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
+import { ScrollArea } from "../../components/ui/scroll-area";
 import { LogIn } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import type { RepoSession } from "@/types/chat";
+import { Button } from "../../components/ui/button";
+import type { RepoSession } from "../../types/chat";
 
 interface ChatWindowProps {
   repo: RepoSession;

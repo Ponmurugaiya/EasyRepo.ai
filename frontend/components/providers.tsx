@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "../components/ui/tooltip";
 import { ReactFlowProvider } from "reactflow";
 import { useState, useEffect } from "react";
-import { useAuthStore } from "@/store/auth-store";
+import { useAuthStore } from "../store/auth-store";
 
 /** Initialise Amplify and pick up any pending Cognito OAuth redirect. */
 function CognitoInit() {
@@ -14,7 +14,7 @@ function CognitoInit() {
     async function init() {
       try {
         const { configureCognito, getCognitoUser, getCognitoToken } = await import(
-          "@/lib/cognito"
+          "../lib/cognito"
         );
         const configured = configureCognito();
         if (!configured) return;

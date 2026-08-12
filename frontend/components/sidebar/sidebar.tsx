@@ -1,15 +1,15 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { useChatStore } from "@/store/chat-store";
-import { useGraphStore } from "@/store/graph-store";
-import { useAuthStore } from "@/store/auth-store";
+import { cn } from "../../lib/utils";
+import { useChatStore } from "../../store/chat-store";
+import { useGraphStore } from "../../store/graph-store";
+import { useAuthStore } from "../../store/auth-store";
 import { RepoItem } from "./repo-item";
-import { DevLoginModal } from "@/components/auth/dev-login-modal";
-import { CognitoLoginModal } from "@/components/auth/cognito-login-modal";
+import { DevLoginModal } from "../../components/auth/dev-login-modal";
+import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
 import { Bot, ChevronLeft, MessageSquare, GitBranch, LogIn, User, SquarePen } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "../../components/ui/button";
 
 type SidebarTab = "chat" | "graph";
 

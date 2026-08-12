@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "../../components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,19 +10,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Spinner } from "@/components/ui/spinner";
+} from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Spinner } from "../../components/ui/spinner";
 import {
   Plus, GitBranch, CheckCircle2, XCircle,
   Download, FileSearch, GitMerge, Cpu, Database, Check, Loader2,
 } from "lucide-react";
-import { ingestRepository, getRepositoryStatus } from "@/lib/api";
-import { useChatStore } from "@/store/chat-store";
-import { cn, sleep } from "@/lib/utils";
-import { parseProgress } from "@/lib/progress";
-import type { RepoStatus } from "@/types/api";
+import { ingestRepository, getRepositoryStatus } from "../../lib/api";
+import { useChatStore } from "../../store/chat-store";
+import { cn, sleep } from "../../lib/utils";
+import { parseProgress } from "../../lib/progress";
+import type { RepoStatus } from "../../types/api";
 
 // ─── Pipeline stage definitions ──────────────────────────────────────────────
 // Each stage has:
@@ -215,7 +215,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
             }
           }
 
-          const { getRepository } = await import("@/lib/api");
+          const { getRepository } = await import("../../lib/api");
           const full = await getRepository(repo.repo_id);
           updateRepoSession(repo.repo_id, {
             entityCount: full.entity_count,

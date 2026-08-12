@@ -2,8 +2,8 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "@/lib/utils";
-import type { ResolvedCitation } from "@/lib/citations";
+import { cn } from "../../lib/utils";
+import type { ResolvedCitation } from "../../lib/citations";
 
 interface MarkdownContentProps {
   content: string;

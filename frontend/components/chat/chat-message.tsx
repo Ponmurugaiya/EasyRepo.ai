@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { cn } from "@/lib/utils";
-import { Spinner } from "@/components/ui/spinner";
+import { cn } from "../../lib/utils";
+import { Spinner } from "../../components/ui/spinner";
 import { CitationPanel } from "./citation-panel";
 import { CitationCodeViewer } from "./citation-code-viewer";
 import { MarkdownContent } from "./markdown-content";
 import { Bot, User, AlertTriangle, GitBranch } from "lucide-react";
-import type { ChatMessage as ChatMessageType } from "@/types/chat";
-import { buildCitationMap } from "@/lib/citations";
-import type { ResolvedCitation } from "@/lib/citations";
-import { useGraphStore } from "@/store/graph-store";
+import type { ChatMessage as ChatMessageType } from "../../types/chat";
+import { buildCitationMap } from "../../lib/citations";
+import type { ResolvedCitation } from "../../lib/citations";
+import { useGraphStore } from "../../store/graph-store";
 
 interface ChatMessageProps {
   message: ChatMessageType;
