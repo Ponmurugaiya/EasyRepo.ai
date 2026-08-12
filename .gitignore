@@ -221,6 +221,9 @@ __marimo__/
 frontend/.next/
 frontend/node_modules/
 frontend/.env.local
+# Do NOT ignore frontend/lib — it's the Next.js lib directory, not Python's
+!frontend/lib/
+!frontend/lib/**
 
 # Log files
 logs/
