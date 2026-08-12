@@ -1,14 +1,14 @@
-import type { NextConfig } from "next";
-import path from "path";
+// @ts-check
+const path = require("path");
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   allowedDevOrigins: ["172.19.16.1"],
   // Static export for Amplify Hosting.
   output: "export",
   reactStrictMode: false,
   webpack(config) {
-    // Ensure @/ alias resolves to the frontend directory root
-    // regardless of the working directory during the build.
+    // Ensure @/ alias resolves to the frontend directory root.
     config.resolve.alias = {
       ...config.resolve.alias,
       "@": path.resolve(__dirname),
@@ -17,4 +17,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
