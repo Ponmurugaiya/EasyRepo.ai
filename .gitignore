@@ -228,3 +228,6 @@ logs/
 
 infra/frontend-build.zip
 infra/*.zip
+
+infra/*.zip
+frontend/out/
