@@ -5,15 +5,15 @@ frontend:
       commands:
         - nvm install 22
         - nvm use 22
-        - node --version
         - npm ci
     build:
       commands:
         - npm run build
   artifacts:
-    baseDirectory: out
+    baseDirectory: .next
     files:
       - '**/*'
   cache:
     paths:
       - node_modules/**/*
+      - .next/cache/**/*
