@@ -225,3 +225,6 @@ frontend/.env.local
 # Log files
 logs/
 *.log
+
+infra/frontend-build.zip
+infra/*.zip
