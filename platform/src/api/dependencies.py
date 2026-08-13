@@ -10,7 +10,6 @@ from typing import Generator, Optional
 import httpx
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwk, jwt
-from jose.utils import base64url_decode
 from sqlalchemy.orm import Session
 
 from src.storage.db import get_session as get_db_session
@@ -39,9 +38,14 @@ def _get_jwks(jwks_url: str) -> dict:
     return resp.json()
 
 def _verify_cognito_jwt(token: str) -> Optional[dict]:
-    """Verify a Cognito JWT and return its claims, or None if invalid."""
+    """Verify a Cognito JWT and return its claims, or None if invalid.
+
+    Handles both id tokens (aud = client_id) and access tokens (no aud claim).
+    Amplify's fetchAuthSession returns the id token by default.
+    """
     pool_id = _cognito_user_pool_id()
     if not pool_id:
+        logger.warning("COGNITO_USER_POOL_ID not set — JWT verification disabled")
         return None
 
     region = _cognito_region()
@@ -50,15 +54,22 @@ def _verify_cognito_jwt(token: str) -> Optional[dict]:
     try:
         jwks = _get_jwks(jwks_url)
     except Exception as exc:
-        logger.warning("Failed to fetch Cognito JWKS: %s", exc)
+        logger.warning("Failed to fetch Cognito JWKS from %s: %s", jwks_url, exc)
         return None
 
     try:
-        # Decode without verification first to extract the key id (kid)
+        # Peek at claims without verification to get kid and token_use
         unverified_header = jwt.get_unverified_header(token)
+        unverified_claims = jwt.get_unverified_claims(token)
         kid = unverified_header.get("kid")
+        token_use = unverified_claims.get("token_use", "")  # "id" or "access"
 
-        # Find the matching public key
+        logger.info(
+            "Cognito JWT: kid=%s token_use=%s iss=%s",
+            kid, token_use, unverified_claims.get("iss", ""),
+        )
+
+        # Find matching public key by kid
         public_key = None
         for key_data in jwks.get("keys", []):
             if key_data.get("kid") == kid:
@@ -66,24 +77,34 @@ def _verify_cognito_jwt(token: str) -> Optional[dict]:
                 break
 
         if public_key is None:
-            logger.debug("No matching JWK found for kid=%s", kid)
+            logger.warning("No matching JWK found for kid=%s (available kids: %s)",
+                kid, [k.get("kid") for k in jwks.get("keys", [])])
             return None
 
-        # Verify signature and claims
         client_id = _cognito_client_id()
         issuer = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+        # id tokens have aud=client_id; access tokens have client_id in
+        # the `client_id` claim instead — skip aud check for access tokens.
+        is_id_token = token_use == "id" or "aud" in unverified_claims
+        decode_options = {"verify_aud": is_id_token and bool(client_id)}
 
         claims = jwt.decode(
             token,
             public_key,
             algorithms=["RS256"],
-            audience=client_id if client_id else None,
+            audience=client_id if (is_id_token and client_id) else None,
             issuer=issuer,
-            options={"verify_aud": bool(client_id)},
+            options={
+                "verify_aud": is_id_token and bool(client_id),
+                "leeway": 30,  # 30s clock skew tolerance
+            },
         )
+        logger.info("Cognito JWT verified: sub=%s email=%s", claims.get("sub"), claims.get("email"))
         return claims
+
     except JWTError as exc:
-        logger.debug("Cognito JWT verification failed: %s", exc)
+        logger.warning("Cognito JWT verification failed: %s", exc)
         return None
     except Exception as exc:
         logger.warning("Unexpected error verifying Cognito JWT: %s", exc)
