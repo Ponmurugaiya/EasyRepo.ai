@@ -70,8 +70,10 @@ export default function Home() {
           <Button
             variant="ghost"
             size="icon"
-            className="absolute top-3 left-3 z-10 h-8 w-8 text-zinc-400 hover:text-white md:hidden"
+            className="absolute top-3 left-3 z-10 h-8 w-8 text-zinc-400 hover:text-white"
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open sidebar"
+            title="Open sidebar"
           >
             <PanelLeft className="h-4 w-4" />
           </Button>
