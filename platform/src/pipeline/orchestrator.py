@@ -36,6 +36,11 @@ from src.retrieval.models import ExpandedContext, FinalContext
 from src.retrieval import search, expand, build_context
 from src.generation.prompt_templates import build_system_prompt, render_context_for_prompt
 from src.generation import GROQ_MODELS
+from src.generation.citation_validator import (
+    validate_citations,
+    collect_context_entities,
+    ValidationReport,
+)
 
 if TYPE_CHECKING:
     from src.api.schemas import ConversationTurn
@@ -112,9 +117,16 @@ class PipelineResult:
         The Short-Term Memory state at pipeline completion.
         ``stm.answer_text`` holds the final answer.
         ``stm.answer_status`` is "answered" for successful completions.
+        ``stm.validation_report`` holds the citation report if validation ran
+        inside the orchestrator (non-overview intents).
     final_context:
         The assembled FinalContext used for the last Answer Agent call.
         Passed to citation validation by the caller.
+    validation_report:
+        The ValidationReport produced by the orchestrator's inline citation
+        validation pass.  ``None`` for overview intents (validation still runs
+        in ask.py for those).  When set, ask.py skips re-validation and goes
+        straight to correction.
     provider_used:
         Which LLM provider produced the final answer.
     trace:
@@ -125,6 +137,7 @@ class PipelineResult:
 
     stm: ShortTermMemory
     final_context: FinalContext
+    validation_report: "ValidationReport | None" = None
     provider_used: str = "unknown"
     trace: "PipelineTrace | None" = None
 
@@ -445,8 +458,11 @@ async def run_pipeline(
         provider_used = agent_response.provider_used
         stm.answer_status = agent_response.status
 
-        # Log raw LLM response with real token counts from the agent response
+        # Store the raw LLM response in STM for post-run debugging
         raw_out = agent_response.raw_response or agent_response.answer or ""
+        stm.raw_llm_responses.append(raw_out)
+
+        # Log raw LLM response with real token counts from the agent response
         trace.step_llm_response(
             provider=provider_used,
             model=groq_model or gemini_model or "auto",
@@ -459,20 +475,84 @@ async def run_pipeline(
         if agent_response.status == "answered":
             stm.answer_text = agent_response.answer
 
-            # Write LTM if session scoped and agent provided an entry
-            if session_id and agent_response.ltm_entry:
-                try:
-                    from src.memory.ltm.session_knowledge import write as ltm_write
-                    ltm_write(repo_id, session_id, agent_response.ltm_entry, repo, db)
-                    trace.step_ltm_write(
-                        feature_name=agent_response.ltm_entry.get("feature_name", "unknown"),
-                        confidence=agent_response.ltm_entry.get("confidence", "medium"),
-                        exploration_status=agent_response.ltm_entry.get("exploration_status", "partial"),
-                        summary=agent_response.ltm_entry.get("summary"),
-                    )
-                except Exception as exc:
-                    logger.warning("LTM write failed: %s", exc)
-            break
+            # ── Inline citation validation ────────────────────────────────
+            # Run validation immediately so the result is available in STM
+            # for the re-retrieval decision and for ask.py (which skips
+            # re-validation when stm.validation_report is already set).
+            try:
+                context_entities = collect_context_entities(final_context)
+                report = validate_citations(
+                    answer=stm.answer_text,
+                    context_entities=context_entities,
+                    final_context=final_context,
+                    db_session=db,
+                    repo_id=repo_id,
+                )
+                stm.validation_report = report
+                stm.citation_hit_rate = (
+                    1.0 - report.hallucination_rate
+                    if report.total_citations > 0
+                    else None  # no citations yet — not a confirmed 0
+                )
+                # Collect entity hints from unsupported citations for re-retrieval
+                stm.unsupported_entity_hints = [
+                    c.nearest_entity_id
+                    for c in report.unsupported_citations
+                    if c.nearest_entity_id
+                ]
+                trace.step_citation(
+                    total=report.total_citations,
+                    definition=len(report.definition_citations),
+                    call_site=len(report.call_site_citations),
+                    unsupported=len(report.unsupported_citations),
+                    rate=report.hallucination_rate,
+                )
+            except Exception as cite_exc:
+                logger.warning("Inline citation validation failed (non-fatal): %s", cite_exc)
+                report = None
+
+            # ── Citation-quality re-retrieval trigger ─────────────────────
+            # If this is not the last attempt, and the answer has zero
+            # citations despite entities being in context, treat it the same
+            # as "insufficient" — fetch the hinted entities and retry once.
+            _has_entities_in_context = bool(final_context.expanded_contexts)
+            _zero_citations = report is not None and report.total_citations == 0
+            _can_retry = attempt < _MAX_ITERATIONS
+
+            if _zero_citations and _has_entities_in_context and _can_retry:
+                logger.info(
+                    "Inline citation check: 0 citations with %d entities in context "
+                    "— triggering citation re-retrieval (attempt %d)",
+                    len(final_context.expanded_contexts), attempt,
+                )
+                # Override status so the re-retrieval path below runs
+                agent_response = type(agent_response)(
+                    status="insufficient",
+                    partial_answer=stm.answer_text,
+                    reason="zero_citations",
+                    missing={"type": "citation_retry", "entity": ""},
+                    raw_response=agent_response.raw_response,
+                    provider_used=agent_response.provider_used,
+                    prompt_tokens=agent_response.prompt_tokens,
+                    completion_tokens=agent_response.completion_tokens,
+                )
+                stm.answer_status = "insufficient"
+                # Don't break — fall through to re-retrieval below
+            else:
+                # Write LTM if session scoped and agent provided an entry
+                if session_id and agent_response.ltm_entry:
+                    try:
+                        from src.memory.ltm.session_knowledge import write as ltm_write
+                        ltm_write(repo_id, session_id, agent_response.ltm_entry, repo, db)
+                        trace.step_ltm_write(
+                            feature_name=agent_response.ltm_entry.get("feature_name", "unknown"),
+                            confidence=agent_response.ltm_entry.get("confidence", "medium"),
+                            exploration_status=agent_response.ltm_entry.get("exploration_status", "partial"),
+                            summary=agent_response.ltm_entry.get("summary"),
+                        )
+                    except Exception as exc:
+                        logger.warning("LTM write failed: %s", exc)
+                break
 
         # On last attempt, force a best-effort answer regardless of status
         if attempt >= _MAX_ITERATIONS:
@@ -488,14 +568,53 @@ async def run_pipeline(
             )
             break
 
-        # Re-retrieval pass
+        # Re-retrieval pass — also inject entities from unsupported citation hints
         new_expanded = await loop.run_in_executor(
             None,
             lambda: targeted_fetch(stm, agent_response, repo_id, db)
         )
+
+        # Supplement with any entities flagged by unsupported citation hints
+        if stm.unsupported_entity_hints:
+            try:
+                from src.storage.models import EntityModel as _EntityModel
+                from src.retrieval.models import RetrievalResult
+                hint_entities = (
+                    db.query(_EntityModel)
+                    .filter(
+                        _EntityModel.id.in_(stm.unsupported_entity_hints),
+                        _EntityModel.id.notin_(stm.visited_entity_ids),
+                    )
+                    .limit(10)
+                    .all()
+                )
+                if hint_entities:
+                    hint_expanded = [
+                        ExpandedContext(
+                            core=RetrievalResult(
+                                entity_id=e.id,
+                                entity=e,
+                                score=0.9,
+                                rank=len(stm.retrieved_chunks) + i + 1,
+                            )
+                        )
+                        for i, e in enumerate(hint_entities)
+                    ]
+                    new_expanded = (new_expanded or []) + hint_expanded
+                    logger.info(
+                        "Citation hints: fetched %d hinted entities for retry",
+                        len(hint_entities),
+                    )
+                    stm.unsupported_entity_hints = []  # consumed
+            except Exception as hint_exc:
+                logger.warning("Failed to fetch citation hint entities: %s", hint_exc)
+
         new_count = len(new_expanded) if new_expanded else 0
         reason = agent_response.reason or agent_response.status
         trace.step_reretrieval(attempt + 1, new_count, reason)
+
+        # Snapshot entity IDs for this iteration before updating
+        stm.context_entity_ids_per_iteration.append(set(stm.visited_entity_ids))
 
         if new_expanded:
             stm.retrieved_chunks.extend(new_expanded)
@@ -518,6 +637,7 @@ async def run_pipeline(
     return PipelineResult(
         stm=stm,
         final_context=final_context,
+        validation_report=stm.validation_report,
         provider_used=provider_used,
         trace=trace,
     )

@@ -199,14 +199,22 @@ async def ask_repository(
     final_context = pipeline_result.final_context
 
     # ── Citation validation ───────────────────────────────────────────────────
-    context_entities = collect_context_entities(final_context)
-    report = validate_citations(
-        answer=answer,
-        context_entities=context_entities,
-        final_context=final_context,
-        db_session=db,
-        repo_id=repo_id,
-    )
+    # If the orchestrator already ran inline citation validation (non-overview
+    # intents), reuse that report — avoids a redundant DB round-trip.
+    # For overview intents the orchestrator returns validation_report=None,
+    # so we run it here as before.
+    if pipeline_result.validation_report is not None:
+        report = pipeline_result.validation_report
+        context_entities = collect_context_entities(final_context)
+    else:
+        context_entities = collect_context_entities(final_context)
+        report = validate_citations(
+            answer=answer,
+            context_entities=context_entities,
+            final_context=final_context,
+            db_session=db,
+            repo_id=repo_id,
+        )
 
     # ── Citation correction (fix unsupported citations before returning) ──────
     if report.unsupported_citations:
@@ -232,14 +240,18 @@ async def ask_repository(
             logger.warning("Citation correction failed (non-fatal): %s", exc)
 
     # Log citation summary via the structured trace (includes per-category breakdown)
+    # Only emit the [6-CITE] log here for overview intents — non-overview intents
+    # already logged it inside the orchestrator's inline validation pass.
     if pipeline_result.trace:
-        pipeline_result.trace.step_citation(
-            total=report.total_citations,
-            definition=len(report.definition_citations),
-            call_site=len(report.call_site_citations),
-            unsupported=len(report.unsupported_citations),
-            rate=report.hallucination_rate,
-        )
+        if pipeline_result.validation_report is None:
+            # Overview path — validation ran here for the first time
+            pipeline_result.trace.step_citation(
+                total=report.total_citations,
+                definition=len(report.definition_citations),
+                call_site=len(report.call_site_citations),
+                unsupported=len(report.unsupported_citations),
+                rate=report.hallucination_rate,
+            )
     # Emit PIPELINE DONE with the real citation count now that validation is complete
     if pipeline_result.trace:
         pipeline_result.trace.finish(

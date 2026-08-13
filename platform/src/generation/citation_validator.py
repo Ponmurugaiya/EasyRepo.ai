@@ -201,7 +201,6 @@ def _parse_citations(answer: str) -> list[tuple[str, str, int, int, str]]:
         )
 
     return found
-    return found
 
 
 # ---------------------------------------------------------------------------

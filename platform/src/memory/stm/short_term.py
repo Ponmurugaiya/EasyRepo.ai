@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.retrieval.models import ExpandedContext
+    from src.generation.citation_validator import ValidationReport
 
 
 @dataclass
@@ -86,6 +87,24 @@ class ShortTermMemory:
 
     # Re-retrieval loop counter
     iteration_count: int = 0
+
+    # ── Citation tracking (populated by orchestrator after each validation) ───
+    # The ValidationReport from the most recent citation validation pass.
+    # Stored here so the answer loop can inspect citation quality and decide
+    # whether to retry, and so ask.py can skip re-validation.
+    validation_report: "ValidationReport | None" = None
+    # Fraction of citations that were verified (1.0 = all good, 0.0 = none).
+    # None means validation has not run yet.
+    citation_hit_rate: float | None = None
+    # Entity IDs flagged as nearest-match hints for unsupported citations.
+    # Fed back into targeted re-retrieval so the next attempt has better context.
+    unsupported_entity_hints: list[str] = field(default_factory=list)
+    # Snapshot of visited entity IDs at the end of each retrieval iteration.
+    # Useful for debugging which entities were available on each attempt.
+    context_entity_ids_per_iteration: list[set[str]] = field(default_factory=list)
+    # Raw LLM response strings, one per answer attempt (index 0 = first attempt).
+    # Stored for post-run debugging without requiring DEBUG log level.
+    raw_llm_responses: list[str] = field(default_factory=list)
 
     # ── Overview pipeline additions ──────────────────────────────────────────
     # Populated by repo_overview.py when intent is repository_overview/detailed.
