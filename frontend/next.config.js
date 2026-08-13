@@ -6,6 +6,7 @@ const nextConfig = {
   // Static export — fully client-side app, no server routes.
   // Output goes to out/ directory for Amplify WEB hosting.
   output: "export",
+  images: { unoptimized: true },
   reactStrictMode: false,
 };
 

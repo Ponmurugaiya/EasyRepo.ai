@@ -9,7 +9,8 @@ import { listRepositories } from "../../lib/api";
 import { RepoItem } from "./repo-item";
 import { DevLoginModal } from "../../components/auth/dev-login-modal";
 import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
-import { Bot, ChevronLeft, MessageSquare, GitBranch, LogIn, LogOut, User, SquarePen } from "lucide-react";
+import { ChevronLeft, MessageSquare, GitBranch, LogIn, LogOut, User, SquarePen } from "lucide-react";
+import Image from "next/image";
 import { Button } from "../../components/ui/button";
 
 type SidebarTab = "chat" | "graph";
@@ -122,8 +123,8 @@ export function Sidebar() {
         {/* ── Branding header + New Chat ── */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600">
-              <Bot className="h-4 w-4 text-white" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-md overflow-hidden">
+              <Image src="/logo.png" alt="EasyRepo logo" width={28} height={28} className="object-contain" />
             </div>
             <span className="text-sm font-semibold text-white">EasyRepo</span>
           </div>

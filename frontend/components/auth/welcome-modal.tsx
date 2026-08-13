@@ -5,7 +5,8 @@ import { useAuthStore } from "../../store/auth-store";
 import { useChatStore } from "../../store/chat-store";
 import { listRepositories } from "../../lib/api";
 import { Button } from "../../components/ui/button";
-import { Bot, Loader2, Clock } from "lucide-react";
+import { Loader2, Clock } from "lucide-react";
+import Image from "next/image";
 
 export function WelcomeModal() {
   const { hasSeenWelcome, dismissWelcome, setCognitoUser } = useAuthStore();
@@ -55,8 +56,8 @@ export function WelcomeModal() {
       <div className="relative w-full max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl p-8 flex flex-col items-center text-center gap-6">
 
         {/* Logo */}
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600/20 border border-blue-600/30">
-          <Bot className="h-8 w-8 text-blue-400" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl overflow-hidden">
+          <Image src="/logo.png" alt="EasyRepo logo" width={64} height={64} className="object-contain" />
         </div>
 
         {/* Heading */}
