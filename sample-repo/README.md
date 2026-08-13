@@ -1,4 +1,4 @@
-# Synthetic Test Repository for Codebase Intelligence Platform
+# Synthetic Test Repository for EasyRepo - Codebase Intelligence Platform
 
 This repository is a purpose-built synthetic codebase for testing Tree-sitter AST parsing, pgvector semantic embedding, and graph-based retrieval in an AI Codebase Intelligence Platform.
 
