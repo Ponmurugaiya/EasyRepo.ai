@@ -231,6 +231,10 @@ logs/
 
 infra/frontend-build.zip
 infra/*.zip
-
-infra/*.zip
 frontend/out/
+
+# Infra files — maintained in private EasyRepo-infra repo
+infra/ecs-task-api.json
+infra/ecs-trust-policy.json
+amplify.yml
+docs/aws-deployment-plan.md
