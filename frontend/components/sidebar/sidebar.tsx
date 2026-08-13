@@ -5,10 +5,11 @@ import { cn } from "../../lib/utils";
 import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
 import { useAuthStore } from "../../store/auth-store";
+import { listRepositories } from "../../lib/api";
 import { RepoItem } from "./repo-item";
 import { DevLoginModal } from "../../components/auth/dev-login-modal";
 import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
-import { Bot, ChevronLeft, MessageSquare, GitBranch, LogIn, User, SquarePen } from "lucide-react";
+import { Bot, ChevronLeft, MessageSquare, GitBranch, LogIn, LogOut, User, SquarePen } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
 type SidebarTab = "chat" | "graph";
@@ -22,6 +23,7 @@ export function Sidebar() {
     setSidebarOpen,
     setActiveRepo,
     startNewChat,
+    syncRepoSessions,
   } = useChatStore();
 
   const {
@@ -31,7 +33,7 @@ export function Sidebar() {
     closeGraph,
   } = useGraphStore();
 
-  const { isLoggedIn, loginMode, cognitoUser } = useAuthStore();
+  const { isLoggedIn, loginMode, cognitoUser, clearToken } = useAuthStore();
   const [loginOpen, setLoginOpen] = useState(false);
 
   // Active tab: if graph panel is open, show graph tab as active
@@ -60,6 +62,25 @@ export function Sidebar() {
     setActiveRepo(repoId);
     openGraph(repoId);
     setSidebarOpen(false);
+  }
+
+  async function handleSignOut() {
+    if (loginMode === "cognito") {
+      try {
+        const { configureCognito, signOutCognito } = await import("../../lib/cognito");
+        configureCognito();
+        await signOutCognito();
+      } catch {
+        // best-effort
+      }
+    }
+    clearToken();
+    try {
+      const repos = await listRepositories();
+      syncRepoSessions(repos);
+    } catch {
+      // non-fatal
+    }
   }
 
   return (
@@ -190,35 +211,50 @@ export function Sidebar() {
                 : "Temporary session · sign in to save history"
               : "Click a repo to view its code graph"}
           </p>
-          <button
-            onClick={() => setLoginOpen(true)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
-              isLoggedIn
-                ? "text-green-400 hover:text-green-300 hover:bg-green-900/20"
-                : "text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
-            )}
-          >
-            {isLoggedIn ? (
-              loginMode === "cognito" && cognitoUser?.picture ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={cognitoUser.picture}
-                  alt=""
-                  className="h-3.5 w-3.5 rounded-full object-cover shrink-0"
-                />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setLoginOpen(true)}
+              className={cn(
+                "flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors min-w-0",
+                isLoggedIn
+                  ? "text-green-400 hover:text-green-300 hover:bg-green-900/20"
+                  : "text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
+              )}
+            >
+              {isLoggedIn ? (
+                loginMode === "cognito" && cognitoUser?.picture ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={cognitoUser.picture}
+                    alt=""
+                    className="h-3.5 w-3.5 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <User className="h-3.5 w-3.5 shrink-0" />
+                )
               ) : (
-                <User className="h-3.5 w-3.5 shrink-0" />
-              )
-            ) : (
-              <LogIn className="h-3.5 w-3.5 shrink-0" />
+                <LogIn className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="truncate">
+                {isLoggedIn
+                  ? loginMode === "cognito"
+                    ? cognitoUser?.name ?? cognitoUser?.email ?? "Signed in"
+                    : "Dev logged in · persistent history"
+                  : "Sign in with Google"}
+              </span>
+            </button>
+
+            {isLoggedIn && (
+              <button
+                onClick={handleSignOut}
+                className="shrink-0 flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
             )}
-            {isLoggedIn
-              ? loginMode === "cognito"
-                ? cognitoUser?.name ?? cognitoUser?.email ?? "Signed in"
-                : "Dev logged in · persistent history"
-              : "Sign in with Google"}
-          </button>
+          </div>
         </div>
 
         <DevLoginModal open={loginOpen && loginMode === "dev"} onClose={() => setLoginOpen(false)} />
