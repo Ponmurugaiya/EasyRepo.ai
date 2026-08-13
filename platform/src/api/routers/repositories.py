@@ -204,6 +204,7 @@ async def create_repository(
         # Fallback: run directly in asyncio thread pool so the API returns
         # immediately and ingestion runs concurrently.
         import asyncio
+        import concurrent.futures
         from src.ingestion.pipeline import ingest_repository
         from src.storage.db import get_session
 
@@ -213,16 +214,28 @@ async def create_repository(
         _repo_name = repo.name
 
         def _run() -> None:
-            with get_session(_db_url) as session:
-                ingest_repository(
-                    repo_path_or_url=_source,
-                    db_session=session,
-                    repo_id=_repo_id,
-                    repo_name=_repo_name,
-                )
+            try:
+                with get_session(_db_url) as session:
+                    ingest_repository(
+                        repo_path_or_url=_source,
+                        db_session=session,
+                        repo_id=_repo_id,
+                        repo_name=_repo_name,
+                    )
+            except Exception as _exc:
+                _log.error("Thread-fallback ingestion failed for %s: %s", _repo_id, _exc, exc_info=True)
 
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, _run)
+        # get_running_loop() is safer than get_event_loop() inside an async
+        # context, and we must retain a reference to the Future so the GC
+        # does not cancel it before ingestion finishes.
+        _loop = asyncio.get_running_loop()
+        _future = _loop.run_in_executor(None, _run)
+        # Fire-and-forget: add a done-callback just to log unexpected errors
+        # that slip past the try/except inside _run (shouldn't happen, but safe).
+        def _on_done(fut: concurrent.futures.Future) -> None:
+            if not fut.cancelled() and fut.exception():
+                _log.error("Executor future raised for %s: %s", _repo_id, fut.exception())
+        _future.add_done_callback(_on_done)
 
     return RepositoryResponse(
         repo_id=repo.id,
