@@ -1,6 +1,7 @@
 "use client";
 
-import { Bot, GitBranch, MessageSquare, Zap, ShieldCheck, Plus, FileSearch } from "lucide-react";
+import { GitBranch, MessageSquare, Zap, ShieldCheck, Plus, FileSearch } from "lucide-react";
+import Image from "next/image";
 import { Button } from "../../components/ui/button";
 import { useChatStore } from "../../store/chat-store";
 import { AddRepoButton } from "../../components/sidebar/add-repo-button";
@@ -36,8 +37,8 @@ export function WelcomeScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center overflow-y-auto">
-      <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-blue-600/20 border border-blue-600/30 mb-6">
-        <Bot className="h-10 w-10 text-blue-400" />
+      <div className="flex h-20 w-20 items-center justify-center rounded-3xl overflow-hidden mb-6">
+        <Image src="/logo.png" alt="EasyRepo logo" width={80} height={80} className="object-contain" />
       </div>
 
       <h1 className="text-3xl font-bold text-white mb-2">EasyRepo</h1>
