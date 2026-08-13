@@ -98,6 +98,7 @@ def _verify_cognito_jwt(token: str) -> Optional[dict]:
             options={
                 "verify_aud": is_id_token and bool(client_id),
                 "leeway": 30,  # 30s clock skew tolerance
+                "verify_at_hash": False,  # we only have the id token, not the access token
             },
         )
         logger.info("Cognito JWT verified: sub=%s email=%s", claims.get("sub"), claims.get("email"))
