@@ -126,7 +126,7 @@ export function CognitoLoginModal({
             <DialogDescription className="text-zinc-400">
               {followUpGate
                 ? "You've used your free question. Sign in to keep the conversation going — your history is saved permanently."
-                : "Sign in to save your chat history, ask unlimited questions, and access your repositories across sessions."}
+                : "Sign in to save your chat history and access your repositories across sessions."}
             </DialogDescription>
           )}
         </DialogHeader>
