@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { cn } from "../../lib/utils";
-import { Spinner } from "../../components/ui/spinner";
 import { CitationPanel } from "./citation-panel";
 import { CitationCodeViewer } from "./citation-code-viewer";
 import { MarkdownContent } from "./markdown-content";
@@ -11,6 +10,7 @@ import type { ChatMessage as ChatMessageType } from "../../types/chat";
 import { buildCitationMap } from "../../lib/citations";
 import type { ResolvedCitation } from "../../lib/citations";
 import { useGraphStore } from "../../store/graph-store";
+import { ThinkingIndicator } from "./thinking-indicator";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -55,9 +55,8 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600">
           <Bot className="h-4 w-4 text-white" />
         </div>
-        <div className="flex items-center gap-2 pt-1">
-          <Spinner size="sm" className="text-blue-400" />
-          <span className="text-sm text-zinc-500">Thinking…</span>
+        <div className="pt-1">
+          <ThinkingIndicator />
         </div>
       </div>
     );
