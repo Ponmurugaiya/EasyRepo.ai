@@ -7,6 +7,7 @@ import { ChatWindow } from "../components/chat/chat-window";
 import { WelcomeScreen } from "../components/chat/welcome-screen";
 import { GraphPanel } from "../components/graph/graph-panel";
 import { CitationCodeViewer } from "../components/chat/citation-code-viewer";
+import { WelcomeModal } from "../components/auth/welcome-modal";
 import { Button } from "../components/ui/button";
 import { PanelLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -63,6 +64,7 @@ export default function Home() {
 
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950">
+      <WelcomeModal />
       <Sidebar />
 
       <main className="flex flex-1 min-w-0 h-full overflow-hidden">

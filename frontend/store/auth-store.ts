@@ -42,6 +42,10 @@ interface AuthState {
   setCognitoUser: (user: CognitoUser) => void;
   /** Clear all auth state (dev or Cognito). */
   clearToken: () => void;
+  /** Mark that the user has dismissed the first-visit welcome modal. */
+  dismissWelcome: () => void;
+  /** True once the user has seen and dismissed the welcome modal. */
+  hasSeenWelcome: boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -51,6 +55,7 @@ export const useAuthStore = create<AuthState>()(
       cognitoUser: null,
       loginMode: null,
       isLoggedIn: false,
+      hasSeenWelcome: false,
 
       setToken: (token) =>
         set({
@@ -58,6 +63,7 @@ export const useAuthStore = create<AuthState>()(
           cognitoUser: null,
           loginMode: token.trim() ? "dev" : null,
           isLoggedIn: Boolean(token.trim()),
+          hasSeenWelcome: true,
         }),
 
       setCognitoUser: (user) =>
@@ -66,6 +72,7 @@ export const useAuthStore = create<AuthState>()(
           token: null,
           loginMode: "cognito",
           isLoggedIn: true,
+          hasSeenWelcome: true,
         }),
 
       clearToken: () =>
@@ -75,6 +82,8 @@ export const useAuthStore = create<AuthState>()(
           loginMode: null,
           isLoggedIn: false,
         }),
+
+      dismissWelcome: () => set({ hasSeenWelcome: true }),
     }),
     {
       name: "easyrepo-dev-token",
