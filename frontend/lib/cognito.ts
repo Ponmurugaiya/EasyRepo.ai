@@ -17,7 +17,8 @@ export function configureCognito() {
   const userPoolId = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? "";
   const clientId   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID    ?? "";
   const domain     = process.env.NEXT_PUBLIC_COGNITO_DOMAIN        ?? "";
-  const redirectUri = process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI ?? "";
+  const redirectUri = process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI
+    ?? (typeof window !== "undefined" ? window.location.origin : "");
 
   if (!userPoolId || !clientId) {
     // Cognito not configured — skip (dev environments may not have it set up)
