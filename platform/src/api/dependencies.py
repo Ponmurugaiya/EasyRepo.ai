@@ -2,14 +2,118 @@
 
 from __future__ import annotations
 
+import logging
 import os
+from functools import lru_cache
 from typing import Generator, Optional
 
+import httpx
 from fastapi import Depends, Header, HTTPException, status
+from jose import JWTError, jwk, jwt
+from jose.utils import base64url_decode
 from sqlalchemy.orm import Session
 
 from src.storage.db import get_session as get_db_session
 from src.storage.models import RepositoryModel, UserModel, UserRepoModel
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cognito JWT verification
+# ---------------------------------------------------------------------------
+
+def _cognito_region() -> str:
+    return os.environ.get("COGNITO_REGION", os.environ.get("AWS_REGION", "us-east-1"))
+
+def _cognito_user_pool_id() -> str:
+    return os.environ.get("COGNITO_USER_POOL_ID", "")
+
+def _cognito_client_id() -> str:
+    return os.environ.get("COGNITO_CLIENT_ID", "")
+
+@lru_cache(maxsize=1)
+def _get_jwks(jwks_url: str) -> dict:
+    """Fetch and cache Cognito's public JWKS. Cached for the process lifetime."""
+    resp = httpx.get(jwks_url, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+def _verify_cognito_jwt(token: str) -> Optional[dict]:
+    """Verify a Cognito JWT and return its claims, or None if invalid."""
+    pool_id = _cognito_user_pool_id()
+    if not pool_id:
+        return None
+
+    region = _cognito_region()
+    jwks_url = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}/.well-known/jwks.json"
+
+    try:
+        jwks = _get_jwks(jwks_url)
+    except Exception as exc:
+        logger.warning("Failed to fetch Cognito JWKS: %s", exc)
+        return None
+
+    try:
+        # Decode without verification first to extract the key id (kid)
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+
+        # Find the matching public key
+        public_key = None
+        for key_data in jwks.get("keys", []):
+            if key_data.get("kid") == kid:
+                public_key = jwk.construct(key_data)
+                break
+
+        if public_key is None:
+            logger.debug("No matching JWK found for kid=%s", kid)
+            return None
+
+        # Verify signature and claims
+        client_id = _cognito_client_id()
+        issuer = f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+        claims = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            audience=client_id if client_id else None,
+            issuer=issuer,
+            options={"verify_aud": bool(client_id)},
+        )
+        return claims
+    except JWTError as exc:
+        logger.debug("Cognito JWT verification failed: %s", exc)
+        return None
+    except Exception as exc:
+        logger.warning("Unexpected error verifying Cognito JWT: %s", exc)
+        return None
+
+def _get_or_create_cognito_user(claims: dict, db: Session) -> UserModel:
+    """Return the UserModel for a verified Cognito user, creating one if needed."""
+    from src.api.auth import create_user
+
+    # Cognito 'sub' is the stable unique identifier
+    external_id = claims.get("sub")
+    email = claims.get("email")
+
+    # Try by external_id first, then by email as fallback
+    user = None
+    if external_id:
+        user = db.query(UserModel).filter_by(external_id=external_id, provider="cognito").first()
+    if user is None and email:
+        user = db.query(UserModel).filter_by(email=email, provider="cognito").first()
+        if user and external_id and not user.external_id:
+            user.external_id = external_id
+            db.flush()
+
+    if user is None:
+        # Auto-provision on first login
+        user, _ = create_user(db=db, email=email, external_id=external_id, provider="cognito")
+        db.commit()
+        logger.info("Auto-provisioned Cognito user: sub=%s email=%s", external_id, email)
+
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -59,44 +163,61 @@ def _auth_enabled() -> bool:
 
 def get_current_user(
     x_api_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ) -> Optional[UserModel]:
-    """Resolve the calling user from the X-API-Key header.
+    """Resolve the calling user from X-API-Key or Authorization: Bearer header.
 
-    When AUTH_ENABLED=true: a valid token is required — raises 401 if missing
-    or invalid.
+    Supports two auth methods:
+    - X-API-Key: local API token (dev/local usage)
+    - Authorization: Bearer <jwt>: Cognito JWT (Google sign-in / production)
 
-    When AUTH_ENABLED=false (default dev mode): auth is optional.  If an
-    X-API-Key header is present it is resolved to a user (giving persistent
-    conversation history); if absent or invalid the request proceeds as
-    anonymous (None).  This lets anonymous and developer sessions coexist
-    without flipping a global flag.
+    When AUTH_ENABLED=true: a valid credential is required — raises 401 if
+    missing or invalid.
+
+    When AUTH_ENABLED=false (default dev mode): auth is optional. If a
+    credential is present it is resolved to a user; if absent the request
+    proceeds as anonymous (None).
     """
-    if not _auth_enabled():
-        # Optional auth — try to resolve a user but never block the request.
-        if not x_api_key:
-            return None
+    auth_required = _auth_enabled()
+
+    # ── Try Cognito JWT from Authorization: Bearer header ─────────────────
+    if authorization and authorization.lower().startswith("bearer "):
+        jwt_token = authorization[7:].strip()
+        claims = _verify_cognito_jwt(jwt_token)
+        if claims:
+            return _get_or_create_cognito_user(claims, db)
+        # Invalid JWT
+        if auth_required:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired Cognito token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return None
+
+    # ── Try local API token from X-API-Key header ─────────────────────────
+    if x_api_key:
         from src.api.auth import lookup_user_by_token
         user = lookup_user_by_token(x_api_key, db)
-        return user  # None if token is wrong — still anonymous, no error
+        if user:
+            return user
+        if auth_required:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired API token.",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+        return None
 
-    # Strict auth — token is mandatory.
-    if not x_api_key:
+    # ── No credential provided ────────────────────────────────────────────
+    if auth_required:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing X-API-Key header.",
             headers={"WWW-Authenticate": "ApiKey"},
         )
-
-    from src.api.auth import lookup_user_by_token
-    user = lookup_user_by_token(x_api_key, db)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired API token.",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
-    return user
+    return None
 
 
 def verify_api_key(
