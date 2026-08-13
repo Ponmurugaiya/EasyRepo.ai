@@ -35,6 +35,7 @@ export function Sidebar() {
 
   const { isLoggedIn, loginMode, cognitoUser, clearToken } = useAuthStore();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [graphNoRepoHint, setGraphNoRepoHint] = useState(false);
 
   // Active tab: if graph panel is open, show graph tab as active
   const activeTab: SidebarTab = graphOpen ? "graph" : "chat";
@@ -43,8 +44,14 @@ export function Sidebar() {
 
   function handleTabChange(tab: SidebarTab) {
     if (tab === "chat") {
+      setGraphNoRepoHint(false);
       closeGraph();
     } else {
+      if (repos.length === 0) {
+        setGraphNoRepoHint(true);
+        return;
+      }
+      setGraphNoRepoHint(false);
       // Switching to graph tab — if a repo is active, open its graph
       if (activeRepoId) {
         openGraph(activeRepoId);
@@ -54,6 +61,7 @@ export function Sidebar() {
 
   function handleRepoClickInChat(repoId: string) {
     closeGraph();
+    setGraphNoRepoHint(false);
     setActiveRepo(repoId);
     setSidebarOpen(false);
   }
@@ -170,8 +178,18 @@ export function Sidebar() {
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
           {repos.length === 0 ? (
             <div className="px-3 py-8 text-center text-xs text-zinc-500">
-              <p>No repos yet.</p>
-              <p className="mt-1">Add a GitHub URL to get started.</p>
+              {graphNoRepoHint ? (
+                <>
+                  <GitBranch className="h-6 w-6 text-zinc-600 mx-auto mb-3" />
+                  <p className="text-zinc-300 font-medium mb-1">No repos yet</p>
+                  <p className="text-zinc-500">Add a GitHub repo first to explore its code graph.</p>
+                </>
+              ) : (
+                <>
+                  <p>No repos yet.</p>
+                  <p className="mt-1">Add a GitHub URL to get started.</p>
+                </>
+              )}
             </div>
           ) : (
             repos.map((repo) => {
