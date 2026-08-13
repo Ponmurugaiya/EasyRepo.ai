@@ -184,6 +184,23 @@ def _parse_citations(answer: str) -> list[tuple[str, str, int, int, str]]:
         end_line = int(m.group(3)) if m.group(3) else start_line
         preceding_text = answer[max(0, m.start() - 60) : m.start()]
         found.append((raw, file_path, start_line, end_line, preceding_text))
+
+    if not found:
+        # Log a snippet so we can see what format the LLM actually used
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        # Check for bracket patterns that might indicate a near-miss format
+        import re as _re
+        bracket_hits = _re.findall(r"\[[^\[\]]{5,80}\]", answer)
+        _log.warning(
+            "Citation parser: 0 citations found in %d-char answer. "
+            "Bracket patterns found: %s | Answer preview: %.300s",
+            len(answer),
+            bracket_hits[:5] if bracket_hits else "none",
+            answer[:300],
+        )
+
+    return found
     return found
 
 
