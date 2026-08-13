@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "../../lib/utils";
 import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
@@ -36,13 +36,22 @@ export function Sidebar() {
   const { isLoggedIn, loginMode, cognitoUser, clearToken } = useAuthStore();
   const [loginOpen, setLoginOpen] = useState(false);
   const [graphNoRepoHint, setGraphNoRepoHint] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<SidebarTab>("chat");
 
-  // Active tab: if graph panel is open, show graph tab as active
-  const activeTab: SidebarTab = graphOpen ? "graph" : "chat";
+  // If the graph panel is closed externally (X button), snap tab back to chat
+  useEffect(() => {
+    if (!graphOpen && selectedTab === "graph") {
+      setSelectedTab("chat");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphOpen]);
+
+  const activeTab = selectedTab;
 
   const repos = Object.values(repoSessions);
 
   function handleTabChange(tab: SidebarTab) {
+    setSelectedTab(tab);
     if (tab === "chat") {
       setGraphNoRepoHint(false);
       closeGraph();
@@ -62,6 +71,7 @@ export function Sidebar() {
   function handleRepoClickInChat(repoId: string) {
     closeGraph();
     setGraphNoRepoHint(false);
+    setSelectedTab("chat");
     setActiveRepo(repoId);
     setSidebarOpen(false);
   }
