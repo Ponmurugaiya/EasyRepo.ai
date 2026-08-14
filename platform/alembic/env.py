@@ -60,10 +60,31 @@ def run_migrations_online() -> None:
     # Always override with the env-resolved URL — never use the ini placeholder.
     configuration["sqlalchemy.url"] = _db_url
 
+    # Force IPv4 connections to avoid Fargate VPCs that lack IPv6 routing.
+    # Supabase hostnames resolve to both IPv4 and IPv6; psycopg2 may pick IPv6
+    # which is unreachable in many Fargate subnets.
+    import socket as _socket
+    _connect_args: dict = {}
+    if "supabase.co" in _db_url or (
+        "localhost" not in _db_url and "127.0.0.1" not in _db_url
+    ):
+        _connect_args["gssencmode"] = "disable"
+        # Monkey-patch getaddrinfo to prefer IPv4 so psycopg2 picks the right addr
+        _orig_getaddrinfo = _socket.getaddrinfo
+
+        def _ipv4_first(host, port, family=0, type=0, proto=0, flags=0):
+            results = _orig_getaddrinfo(host, port, family, type, proto, flags)
+            ipv4 = [r for r in results if r[0] == _socket.AF_INET]
+            ipv6 = [r for r in results if r[0] != _socket.AF_INET]
+            return ipv4 + ipv6
+
+        _socket.getaddrinfo = _ipv4_first
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=_connect_args,
     )
 
     with connectable.connect() as connection:

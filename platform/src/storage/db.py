@@ -47,10 +47,13 @@ def _is_remote(db_url: str) -> bool:
 
 
 def _add_ssl_if_remote(db_url: str) -> str:
-    """Add ``sslmode=require`` to the URL when connecting to a remote host.
+    """Add ``sslmode=require`` and ``gssencmode=disable`` for remote hosts.
 
-    Safe to call multiple times — will not add a duplicate sslmode if one is
-    already present.
+    ``gssencmode=disable`` prevents psycopg2 from attempting GSSAPI/Kerberos
+    negotiation, which can cause connection failures in Fargate environments
+    where the host resolves to an IPv6 address that the VPC cannot route.
+
+    Safe to call multiple times — will not add duplicate params.
     """
     if not _is_remote(db_url):
         return db_url
@@ -59,6 +62,8 @@ def _add_ssl_if_remote(db_url: str) -> str:
     params = parse_qs(parsed.query, keep_blank_values=True)
     if "sslmode" not in params:
         params["sslmode"] = ["require"]
+    if "gssencmode" not in params:
+        params["gssencmode"] = ["disable"]
     new_query = urlencode({k: v[0] for k, v in params.items()})
     return urlunparse(parsed._replace(query=new_query))
 
