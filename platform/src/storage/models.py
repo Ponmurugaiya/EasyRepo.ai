@@ -404,6 +404,11 @@ class AskJobModel(Base):
     # Full serialised AskResponse (JSON) written by the worker on completion
     result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Live pipeline progress written by the worker while status=running.
+    # Shape: {"pipeline": "overview"|"semantic", "stage": str,
+    #         "files_done": int, "files_total": int}
+    # Cleared (set to None) once status transitions to done/failed.
+    progress: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -182,12 +182,39 @@ def ask_pipeline_task(
 
     logger.info("ask_pipeline_task: starting job_id=%s repo=%s", job_id, repo_id)
 
+    def _write_progress(db, jid: str, pipeline: str, stage: str,
+                        files_done: int = 0, files_total: int = 0) -> None:
+        """Write live progress to the job row. Non-fatal on any error."""
+        try:
+            j = db.query(AskJobModel).filter_by(id=jid).first()
+            if j:
+                j.progress = {
+                    "pipeline": pipeline,
+                    "stage": stage,
+                    "files_done": files_done,
+                    "files_total": files_total,
+                }
+                j.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception as e:
+            logger.warning("ask_pipeline_task: progress write failed: %s", e)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
     def _run():
         with _get_session(db_url) as db:
-            # Mark as running
+            # Mark as running + first stage: classifying
             job = db.query(AskJobModel).filter_by(id=job_id).first()
             if job:
                 job.status = "running"
+                job.progress = {
+                    "pipeline": "semantic",   # updated after planner runs
+                    "stage": "classifying",
+                    "files_done": 0,
+                    "files_total": 0,
+                }
                 job.updated_at = datetime.now(timezone.utc)
                 db.commit()
 
@@ -214,6 +241,12 @@ def ask_pipeline_task(
                     for t in (conversation_history or [])
                 ]
 
+                # Progress callback — called by orchestrator at key stages.
+                # Runs in the worker thread, so direct DB writes are safe.
+                def _on_progress(stage: str, pipeline: str = "semantic",
+                                 files_done: int = 0, files_total: int = 0) -> None:
+                    _write_progress(db, job_id, pipeline, stage, files_done, files_total)
+
                 loop = asyncio.new_event_loop()
                 try:
                     pipeline_result = loop.run_until_complete(run_pipeline(
@@ -232,6 +265,7 @@ def ask_pipeline_task(
                         gemini_api_key=None,
                         skip_groq=skip_groq,
                         skip_gemini=skip_gemini,
+                        on_progress=_on_progress,
                     ))
                 finally:
                     loop.close()
@@ -259,6 +293,9 @@ def ask_pipeline_task(
                         ValidationReport as _ValidationReport,
                     )
                     from src.storage.models import EntityModel as _EntityModel
+
+                    # Signal: validating citations
+                    _write_progress(db, job_id, "overview", "citations")
 
                     # Strip all [file:L-L] tokens from answer text
                     answer = _re.sub(
@@ -335,6 +372,7 @@ def ask_pipeline_task(
                     if job:
                         job.status = "done"
                         job.result = result_dict
+                        job.progress = None
                         job.updated_at = datetime.now(timezone.utc)
                         db.commit()
                     logger.info("ask_pipeline_task: overview done job_id=%s files=%d",
@@ -342,6 +380,9 @@ def ask_pipeline_task(
                     return
 
                 # ── Normal (non-overview) citation validation + correction ────
+                # Signal citations stage
+                _write_progress(db, job_id, "semantic", "citations")
+
                 # Validate
                 context_entities = collect_context_entities(final_context)
                 if pipeline_result.validation_report is not None:
@@ -434,6 +475,7 @@ def ask_pipeline_task(
                 if job:
                     job.status = "done"
                     job.result = result_dict
+                    job.progress = None
                     job.updated_at = datetime.now(timezone.utc)
                     db.commit()
                 logger.info("ask_pipeline_task: done job_id=%s", job_id)

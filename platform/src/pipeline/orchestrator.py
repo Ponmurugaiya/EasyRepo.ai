@@ -187,6 +187,9 @@ async def run_pipeline(
     gemini_api_key: Optional[str] = None,
     skip_groq: bool = False,
     skip_gemini: bool = False,
+    # Optional progress callback — called at each pipeline stage.
+    # Signature: (stage, pipeline, files_done, files_total) -> None
+    on_progress=None,
 ) -> PipelineResult:
     """Run the full unified query pipeline.
 
@@ -304,6 +307,15 @@ async def run_pipeline(
         trace.step_planner("query", "semantic_search", query, 0.0)
     trace.step_stm("post-plan", stm)
 
+    # Determine pipeline type for progress reporting
+    _pipeline_type = (
+        "overview"
+        if stm.intent in ("repository_overview", "repository_detailed")
+        else "semantic"
+    )
+    if on_progress:
+        on_progress("searching", _pipeline_type)
+
     # ── 3. Initial Retrieval ─────────────────────────────────────────────────
     results = []
 
@@ -323,6 +335,7 @@ async def run_pipeline(
                 db=db,
                 trace=trace,
                 stm=stm,
+                on_progress=on_progress,
             )
             stm.answer_text = overview_answer
             stm.answer_status = "answered"
@@ -442,6 +455,10 @@ async def run_pipeline(
     from src.retrieval.targeted_retrieval import fetch as targeted_fetch
 
     provider_used = "unknown"
+
+    # Signal: generating final response
+    if on_progress:
+        on_progress("generating", _pipeline_type)
 
     for attempt in range(_MAX_ITERATIONS + 1):
         context_str = render_context_for_prompt(final_context)

@@ -186,6 +186,29 @@ class AskJobSubmittedResponse(BaseModel):
     status: str = "pending"
 
 
+class AskJobProgressSchema(BaseModel):
+    """Live pipeline progress written by the worker while status=running.
+
+    pipeline:
+        "overview"  — repository_overview / repository_detailed intent
+        "semantic"  — all other intents (semantic search)
+    stage:
+        "classifying"   — query planner running
+        "reading_files" — overview: file summarisation in progress
+        "insights"      — overview: folder agents aggregating file summaries
+        "searching"     — semantic: vector search + graph expansion
+        "generating"    — LLM generating the final answer
+        "citations"     — citation validation + correction
+    files_done / files_total:
+        Only meaningful when stage == "reading_files".
+    """
+
+    pipeline: str = "semantic"   # "overview" | "semantic"
+    stage: str = "classifying"
+    files_done: int = 0
+    files_total: int = 0
+
+
 class AskJobStatusResponse(BaseModel):
     """Returned by GET /ask/{job_id} — either pending/running or the full result."""
 
@@ -193,6 +216,8 @@ class AskJobStatusResponse(BaseModel):
     status: str  # "pending" | "running" | "done" | "failed"
     result: Optional[AskResponse] = None
     error: Optional[str] = None
+    # Present while status is "running" (None when pending/done/failed)
+    progress: Optional[AskJobProgressSchema] = None
 
 
 # ---------------------------------------------------------------------------

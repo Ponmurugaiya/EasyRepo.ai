@@ -3,54 +3,88 @@
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 import {
-  Search, GitBranch, Cpu, CheckCircle2, Loader2,
+  Search, Cpu, CheckCircle2, Loader2, FileText, Lightbulb, Brain,
 } from "lucide-react";
+import type { AskJobProgress } from "../../lib/api";
 
-// ── Pipeline stages ───────────────────────────────────────────────────────────
-// Timings are conservative estimates based on real backend logs.
-// The component advances through them on a timer; if the response arrives
-// early the parent simply unmounts this component.
+// ── Stage definitions ─────────────────────────────────────────────────────────
 
-interface Stage {
+interface StageDef {
+  key: string;
   icon: React.ElementType;
-  label: string;
+  label: (progress?: AskJobProgress) => string;
   detail: string;
-  minMs: number;   // advance to next stage after at least this many ms
 }
 
-const STAGES: Stage[] = [
+// Shared first and last stages
+const STAGE_CLASSIFYING: StageDef = {
+  key: "classifying",
+  icon: Brain,
+  label: () => "Classifying query",
+  detail: "Understanding your question to pick the best search strategy…",
+};
+
+const STAGE_CITATIONS: StageDef = {
+  key: "citations",
+  icon: CheckCircle2,
+  label: () => "Validating citations",
+  detail: "Verifying every file and line reference against the code graph…",
+};
+
+// Overview pipeline stages
+const OVERVIEW_STAGES: StageDef[] = [
+  STAGE_CLASSIFYING,
   {
-    icon: Search,
-    label: "Searching the code graph",
-    detail: "Running semantic search across entities and embeddings…",
-    minMs: 3000,
+    key: "reading_files",
+    icon: FileText,
+    label: (p) =>
+      p && p.files_total > 0
+        ? `Reading files  ${p.files_done} / ${p.files_total}`
+        : "Reading files…",
+    detail: "Summarising every file in the repository…",
   },
   {
-    icon: GitBranch,
-    label: "Tracing relationships",
-    detail: "Expanding call chains, inheritance, and containment edges…",
-    minMs: 5000,
+    key: "insights",
+    icon: Lightbulb,
+    label: () => "Getting required insights",
+    detail: "Aggregating file summaries into folder-level understanding…",
   },
   {
+    key: "generating",
     icon: Cpu,
-    label: "Generating answer",
-    detail: "Sending context to the language model — this is the longest step…",
-    minMs: 12000,
+    label: () => "Generating final response",
+    detail: "Synthesising all insights into a complete answer…",
   },
-  {
-    icon: CheckCircle2,
-    label: "Validating citations",
-    detail: "Verifying every file and line reference against the code graph…",
-    minMs: Infinity,  // stays here until response arrives
-  },
+  STAGE_CITATIONS,
 ];
 
-// Reassurance copy shown below the stage list when the wait is long
+// Semantic search pipeline stages
+const SEMANTIC_STAGES: StageDef[] = [
+  STAGE_CLASSIFYING,
+  {
+    key: "searching",
+    icon: Search,
+    label: () => "Searching the code graph",
+    detail: "Running semantic search across entities and embeddings…",
+  },
+  {
+    key: "generating",
+    icon: Cpu,
+    label: () => "Generating final response",
+    detail: "Sending context to the language model…",
+  },
+  STAGE_CITATIONS,
+];
+
+// Fallback — used before we know the pipeline (pending/no progress yet)
+const FALLBACK_STAGES = SEMANTIC_STAGES;
+
+// Reassurance copy shown when the wait is long
 const LONG_WAIT_COPY = [
   "Complex queries with deep call chains take a moment…",
-  "Hang tight — tracing across large repos takes a bit longer…",
+  "Hang tight — processing large repos takes a bit longer…",
   "Still working — the model is reading a lot of context…",
-  "Almost there — validating all the citations now…",
+  "Almost there — finalising the answer now…",
 ];
 
 function formatElapsed(ms: number): string {
@@ -61,8 +95,22 @@ function formatElapsed(ms: number): string {
   return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }
 
-export function ThinkingIndicator() {
-  const [stageIdx, setStageIdx] = useState(0);
+// Map backend stage key → index in each stage list
+function stageIndex(stages: StageDef[], key: string): number {
+  const idx = stages.findIndex((s) => s.key === key);
+  // If the key isn't found yet (e.g. still "classifying" before first write),
+  // return 0 so we show the first stage.
+  return idx >= 0 ? idx : 0;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+interface ThinkingIndicatorProps {
+  /** Live pipeline progress from the backend poll. Undefined while pending. */
+  progress?: AskJobProgress;
+}
+
+export function ThinkingIndicator({ progress }: ThinkingIndicatorProps) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [longWaitIdx, setLongWaitIdx] = useState(0);
 
@@ -73,15 +121,7 @@ export function ThinkingIndicator() {
     return () => clearInterval(id);
   }, []);
 
-  // Stage advancement — each stage has a minimum duration before advancing
-  useEffect(() => {
-    if (stageIdx >= STAGES.length - 1) return;
-    const minMs = STAGES[stageIdx].minMs;
-    const id = setTimeout(() => setStageIdx((i) => i + 1), minMs);
-    return () => clearTimeout(id);
-  }, [stageIdx]);
-
-  // Rotate reassurance copy every 8s once we've been waiting > 15s
+  // Rotate reassurance copy every 8s once waiting > 15s
   useEffect(() => {
     if (elapsedMs < 15000) return;
     const id = setInterval(
@@ -89,9 +129,18 @@ export function ThinkingIndicator() {
       8000,
     );
     return () => clearInterval(id);
-  }, [elapsedMs >= 15000]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsedMs >= 15000]);
 
-  const activeStage = STAGES[stageIdx];
+  // Pick stage list based on pipeline type from progress
+  const stages =
+    progress?.pipeline === "overview"
+      ? OVERVIEW_STAGES
+      : FALLBACK_STAGES;
+
+  // Active stage index driven by backend progress; fallback to 0 (classifying)
+  const activeIdx = progress ? stageIndex(stages, progress.stage) : 0;
+  const activeStage = stages[activeIdx];
   const ActiveIcon = activeStage.icon;
   const isLong = elapsedMs >= 15000;
 
@@ -100,14 +149,16 @@ export function ThinkingIndicator() {
       {/* Active stage hero */}
       <div className="flex items-start gap-3 rounded-xl bg-zinc-800/60 border border-zinc-700/40 px-3.5 py-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600/20 border border-blue-600/30 mt-0.5">
-          {stageIdx === STAGES.length - 1
+          {activeIdx === stages.length - 1 && progress?.stage === "citations"
             ? <ActiveIcon className="h-4 w-4 text-blue-400" />
             : <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
           }
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-white">{activeStage.label}</p>
+            <p className="text-sm font-medium text-white">
+              {activeStage.label(progress)}
+            </p>
             <span className="shrink-0 text-xs font-mono text-zinc-500 tabular-nums">
               {formatElapsed(elapsedMs)}
             </span>
@@ -118,17 +169,17 @@ export function ThinkingIndicator() {
         </div>
       </div>
 
-      {/* Stage pipeline list */}
+      {/* Stage list */}
       <div className="space-y-0.5 pl-1">
-        {STAGES.map((stage, idx) => {
-          const isDone = idx < stageIdx;
-          const isActive = idx === stageIdx;
-          const isPending = idx > stageIdx;
+        {stages.map((stage, idx) => {
+          const isDone = idx < activeIdx;
+          const isActive = idx === activeIdx;
+          const isPending = idx > activeIdx;
           const Icon = stage.icon;
 
           return (
             <div
-              key={stage.label}
+              key={stage.key}
               className={cn(
                 "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 transition-colors",
                 isActive && "bg-blue-600/8",
@@ -136,8 +187,8 @@ export function ThinkingIndicator() {
             >
               <div className={cn(
                 "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-                isDone  && "bg-green-600/20 text-green-400",
-                isActive  && "bg-blue-600/20 text-blue-400",
+                isDone   && "bg-green-600/20 text-green-400",
+                isActive && "bg-blue-600/20 text-blue-400",
                 isPending && "bg-zinc-800 text-zinc-600",
               )}>
                 {isDone
@@ -150,10 +201,10 @@ export function ThinkingIndicator() {
               <span className={cn(
                 "text-xs truncate",
                 isDone   && "text-zinc-500",
-                isActive  && "text-blue-300 font-medium",
+                isActive && "text-blue-300 font-medium",
                 isPending && "text-zinc-600",
               )}>
-                {stage.label}
+                {stage.label(isActive || isDone ? progress : undefined)}
               </span>
             </div>
           );

@@ -171,11 +171,24 @@ export interface AskJobSubmittedResponse {
   status: string;
 }
 
+export interface AskJobProgress {
+  /** "overview" | "semantic" */
+  pipeline: string;
+  /**
+   * "classifying" | "searching" | "reading_files" | "insights" |
+   * "generating" | "citations"
+   */
+  stage: string;
+  files_done: number;
+  files_total: number;
+}
+
 export interface AskJobStatusResponse {
   job_id: string;
   status: "pending" | "running" | "done" | "failed";
   result?: AskResponse;
   error?: string;
+  progress?: AskJobProgress;
 }
 
 /**
