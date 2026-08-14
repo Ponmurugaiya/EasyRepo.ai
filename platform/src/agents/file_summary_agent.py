@@ -391,6 +391,7 @@ def execute_batch(batch: "FileBatch", intent: str) -> dict[str, str]:
         system_prompt=system_prompt,
         task_type="fast",
         force_model=batch.target_model.model_id,
+        skip_providers={"openrouter"},
     )
 
     return _parse_batch_response(raw, batch)

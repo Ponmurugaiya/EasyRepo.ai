@@ -334,6 +334,7 @@ def pick_next_model(
     task_type: str = "fast",
     exclude_model_ids: Optional[set[str]] = None,
     estimated_tokens: int = 0,
+    skip_providers: Optional[set[str]] = None,
 ) -> "ModelSpec":
     """Return the next best available ModelSpec, excluding already-tried models.
 
@@ -345,6 +346,7 @@ def pick_next_model(
     candidates = _select_candidates(
         task_type=task_type,
         estimated_tokens=estimated_tokens,
+        skip_providers=skip_providers or set(),
     )
     remaining = [c for c in candidates if c.model_id not in exclude]
     if not remaining:

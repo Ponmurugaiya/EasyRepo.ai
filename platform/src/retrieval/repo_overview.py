@@ -95,18 +95,22 @@ async def _summarize_files_async(
     context_estimate = int(max_single_file_tokens * 1.5) + 400
 
     # Step 1 — pick model (quota-aware, no LLM call)
-    # Hard-exclude allam-2-7b: 4096 ctx + 6000 TPM makes it unsuitable for batch calls.
+    # Hard-exclude openrouter for batch summarization: free tier throttles
+    # concurrent calls badly (80s+ per batch). Use NVIDIA NIM / Cloudflare / Groq instead.
+    _BATCH_SKIP = {"openrouter"}
+
     try:
         model = _llm.pick_model(
             task_type="fast",
             estimated_tokens=context_estimate,
-            skip_providers=set(),
+            skip_providers=_BATCH_SKIP,
         )
         if model.model_id == "groq/allam-2-7b":
             model = _llm.pick_next_model(
                 task_type="fast",
                 exclude_model_ids={"groq/allam-2-7b"},
                 estimated_tokens=context_estimate,
+                skip_providers=_BATCH_SKIP,
             )
     except _llm.LLMQuotaExhaustedError:
         logger.warning("Overview: no fast models available for file summarization — skipping")

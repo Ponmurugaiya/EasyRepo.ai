@@ -132,14 +132,14 @@ def summarize_folder(
         context = _build_context(folder, file_summaries, intent)
         query = f"Summarise the `{folder}` folder."
 
-        # No force_model/force_provider — let the full cascade run.
-        # Avoids concurrent RPM burst against a single provider when multiple
-        # folder agents run in parallel via asyncio.gather.
+        # No force_model/force_provider — let the cascade run, but skip OpenRouter:
+        # free tier throttles concurrent calls badly (80s+ per batch call).
         summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
             query=query,
             context=context,
             system_prompt=system_prompt,
             task_type="fast",
+            skip_providers={"openrouter"},
         )
         return summary.strip(), prompt_tokens, completion_tokens
 
