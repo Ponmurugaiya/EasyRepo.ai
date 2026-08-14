@@ -192,3 +192,29 @@ export async function getEntitySource(
 export async function getHealth(): Promise<{ status: string; database: string }> {
   return request("/health");
 }
+
+// ── Conversations ─────────────────────────────────────────────────────────────
+
+export interface ConversationTurnResponse {
+  turn_index: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface ConversationResponse {
+  conversation_id: string;
+  repo_id: string;
+  turns: ConversationTurnResponse[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listConversations(
+  repoId: string,
+  limit = 5
+): Promise<ConversationResponse[]> {
+  return request<ConversationResponse[]>(
+    `/repositories/${repoId}/conversations?limit=${limit}`
+  );
+}

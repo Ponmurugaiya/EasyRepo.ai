@@ -62,6 +62,8 @@ interface ChatState {
   /** Replace the repo session list with the server's authoritative list.
    *  Called after dev login to prune repos the user has no access to. */
   syncRepoSessions: (repos: RepositoryResponse[]) => void;
+  /** Restore conversation history from the server for a repo (authenticated users). */
+  restoreHistory: (repoId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -299,6 +301,69 @@ export const useChatStore = create<ChatState>()(
             activeRepoId: nextActiveId,
           };
         });
+      },
+
+      restoreHistory: async (repoId) => {
+        try {
+          const { listConversations } = await import("../lib/api");
+          const serverConvs = await listConversations(repoId, 1); // most recent only
+          if (!serverConvs.length) return;
+
+          const serverConv = serverConvs[0];
+          if (!serverConv.turns.length) return;
+
+          // Only restore if we don't already have local messages for this repo
+          const existing = get().conversations[repoId];
+          if (existing?.messages.length) return;
+
+          // Rebuild messages from server turns
+          const messages: ChatMessage[] = serverConv.turns.map((t) => {
+            if (t.role === "user") {
+              return {
+                id: uid(),
+                role: "user" as const,
+                content: t.content,
+                timestamp: new Date(t.created_at).getTime(),
+              };
+            }
+            return {
+              id: uid(),
+              role: "assistant" as const,
+              content: t.content,
+              timestamp: new Date(t.created_at).getTime(),
+              provider: "restored",
+              citations: {
+                total_citations: 0,
+                definition_citations: [],
+                call_site_citations: [],
+                unsupported_citations: [],
+                hallucination_rate: 0,
+              },
+              context_entities: [],
+              loading: false as const,
+            };
+          });
+
+          const repo = get().repoSessions[repoId];
+          const restoredConv: Conversation = {
+            id: serverConv.conversation_id,
+            repoId,
+            repoName: repo?.repoName ?? repoId,
+            repoUrl: repo?.repoUrl ?? "",
+            messages,
+            createdAt: new Date(serverConv.created_at).getTime(),
+            updatedAt: new Date(serverConv.updated_at).getTime(),
+          };
+
+          set((state) => ({
+            conversations: {
+              ...state.conversations,
+              [repoId]: restoredConv,
+            },
+          }));
+        } catch {
+          // Non-fatal — silent failure, user just won't see history
+        }
       },
     }),
     {

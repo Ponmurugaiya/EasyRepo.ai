@@ -5,10 +5,12 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { ReactFlowProvider } from "reactflow";
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../store/auth-store";
+import { useChatStore } from "../store/chat-store";
 
 /** Initialise Amplify and pick up any pending Cognito OAuth redirect. */
 function CognitoInit() {
   const { setCognitoUser, isLoggedIn, loginMode } = useAuthStore();
+  const { syncRepoSessions, restoreHistory } = useChatStore();
 
   useEffect(() => {
     async function init() {
@@ -38,6 +40,25 @@ function CognitoInit() {
                 // Malformed JWT — ignore
               }
             }
+          }
+        }
+
+        // Always sync repos for a signed-in Cognito user on load — this
+        // ensures the sidebar is populated after refresh or on a new device.
+        const currentUser = await getCognitoUser();
+        if (currentUser) {
+          try {
+            const { listRepositories } = await import("../lib/api");
+            const repos = await listRepositories();
+            syncRepoSessions(repos);
+            // Restore conversation history for each repo (most recent conversation)
+            for (const repo of repos) {
+              if (repo.status === "ready") {
+                restoreHistory(repo.repo_id);
+              }
+            }
+          } catch {
+            // Non-fatal — sidebar may be empty but app still works
           }
         }
       } catch {

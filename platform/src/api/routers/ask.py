@@ -374,3 +374,86 @@ async def ask_repository(
         context_entities=[ent.id for ent in context_entities],
         provider=pipeline_result.provider_used,
     )
+
+
+# ---------------------------------------------------------------------------
+# Conversation history — restore turns for authenticated users
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _BaseModel
+
+class ConversationTurnResponse(_BaseModel):
+    turn_index: int
+    role: str
+    content: str
+    created_at: str
+
+
+class ConversationResponse(_BaseModel):
+    conversation_id: str
+    repo_id: str
+    turns: list[ConversationTurnResponse]
+    created_at: str
+    updated_at: str
+
+
+@router.get("/{repo_id}/conversations", response_model=list[ConversationResponse])
+@_limiter.limit(_RATE_ASK)
+async def list_conversations(
+    request: Request,
+    repo_id: str,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> list[ConversationResponse]:
+    """Return the most recent conversations for an authenticated user in a repo.
+
+    Each conversation includes its full turn list so the frontend can
+    restore the chat history without additional round-trips.
+
+    - ``limit``: max number of conversations to return (default 5, max 20).
+    - Anonymous users (no auth token) get an empty list.
+    """
+    if not current_user:
+        return []
+
+    # Clamp limit to a safe maximum
+    limit = min(limit, 20)
+
+    get_accessible_repository(repo_id, db, current_user)
+
+    from src.storage.models import ConversationModel, ConversationTurnModel
+
+    convs = (
+        db.query(ConversationModel)
+        .filter_by(user_id=current_user.id, repo_id=repo_id)
+        .order_by(ConversationModel.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for conv in convs:
+        turns = (
+            db.query(ConversationTurnModel)
+            .filter_by(conversation_id=conv.id)
+            .order_by(ConversationTurnModel.turn_index.asc())
+            .all()
+        )
+        result.append(ConversationResponse(
+            conversation_id=conv.id,
+            repo_id=conv.repo_id,
+            turns=[
+                ConversationTurnResponse(
+                    turn_index=t.turn_index,
+                    role=t.role,
+                    content=t.content,
+                    created_at=t.created_at.isoformat(),
+                )
+                for t in turns
+            ],
+            created_at=conv.created_at.isoformat(),
+            updated_at=conv.updated_at.isoformat(),
+        ))
+
+    return result
