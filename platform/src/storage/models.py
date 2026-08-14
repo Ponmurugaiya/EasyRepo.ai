@@ -426,7 +426,7 @@ class AskJobModel(Base):
     )
 
 
-
+class UserMemoryModel(Base):
     """ORM model for ``user_memory`` table.
 
     Stores global facts about the user that apply across all repositories:
