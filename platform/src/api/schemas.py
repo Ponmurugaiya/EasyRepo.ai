@@ -175,6 +175,22 @@ class AskResponse(BaseModel):
     provider: str = "unknown"
 
 
+class AskJobSubmittedResponse(BaseModel):
+    """Returned immediately by POST /ask — contains the job ID to poll."""
+
+    job_id: str
+    status: str = "pending"
+
+
+class AskJobStatusResponse(BaseModel):
+    """Returned by GET /ask/{job_id} — either pending/running or the full result."""
+
+    job_id: str
+    status: str  # "pending" | "running" | "done" | "failed"
+    result: Optional[AskResponse] = None
+    error: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Error schema
 # ---------------------------------------------------------------------------

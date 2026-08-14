@@ -11,6 +11,8 @@ import type {
   RepositoryStatusResponse,
 } from "../types/api";
 
+import { sleep } from "./utils";
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Read the stored dev token without subscribing to store updates. */
@@ -164,16 +166,96 @@ export async function getRepository(
 
 // ── Ask ─────────────────────────────────────────────────────────────────────
 
-export async function askRepository(
+export interface AskJobSubmittedResponse {
+  job_id: string;
+  status: string;
+}
+
+export interface AskJobStatusResponse {
+  job_id: string;
+  status: "pending" | "running" | "done" | "failed";
+  result?: AskResponse;
+  error?: string;
+}
+
+/**
+ * Submit an ask query — returns a job_id immediately (< 1s).
+ * The pipeline runs in the background; poll getAskJob() for the result.
+ */
+export async function submitAskJob(
   repoId: string,
   payload: AskRequest,
   signal?: AbortSignal
-): Promise<AskResponse> {
-  return request<AskResponse>(`/repositories/${repoId}/ask`, {
+): Promise<AskJobSubmittedResponse> {
+  return request<AskJobSubmittedResponse>(`/repositories/${repoId}/ask`, {
     method: "POST",
     body: JSON.stringify(payload),
     signal,
   });
+}
+
+/**
+ * Poll the result of an async ask job.
+ * Returns immediately — check .status to know if the result is ready.
+ */
+export async function getAskJob(
+  repoId: string,
+  jobId: string,
+  signal?: AbortSignal
+): Promise<AskJobStatusResponse> {
+  return request<AskJobStatusResponse>(
+    `/repositories/${repoId}/ask/${jobId}`,
+    { signal },
+  );
+}
+
+/**
+ * Submit a query and poll until the result is ready or timeout is reached.
+ * Replaces the old askRepository() single-request pattern.
+ *
+ * @param pollIntervalMs  How often to poll (default 2s)
+ * @param timeoutMs       Give up after this long (default 120s)
+ */
+export async function askRepository(
+  repoId: string,
+  payload: AskRequest,
+  signal?: AbortSignal,
+  pollIntervalMs = 2000,
+  timeoutMs = 120_000,
+): Promise<AskResponse> {
+  const submitted = await submitAskJob(repoId, payload, signal);
+  const jobId = submitted.job_id;
+
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    // Respect caller abort
+    if (signal?.aborted) throw new ApiError("Request cancelled.", 0);
+
+    await sleep(pollIntervalMs);
+
+    if (signal?.aborted) throw new ApiError("Request cancelled.", 0);
+
+    const job = await getAskJob(repoId, jobId, signal);
+
+    if (job.status === "done" && job.result) {
+      return job.result;
+    }
+
+    if (job.status === "failed") {
+      throw new ApiError(
+        job.error ?? "The request failed on the server. Please try again.",
+        500
+      );
+    }
+
+    // pending or running — keep polling
+  }
+
+  throw new ApiError(
+    "Request timed out. The server is taking too long — please try again.",
+    408
+  );
 }
 
 // ── Entity source ────────────────────────────────────────────────────────────

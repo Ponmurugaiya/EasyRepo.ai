@@ -381,7 +381,52 @@ class ConversationTurnModel(Base):
 # Long-Term Memory — three-tier design
 # ---------------------------------------------------------------------------
 
-class UserMemoryModel(Base):
+class AskJobModel(Base):
+    """ORM model for ``ask_jobs`` table.
+
+    Stores the state and result of an async pipeline job deferred via
+    Procrastinate.  The frontend polls ``GET /repositories/{id}/ask/{job_id}``
+    until ``status`` is ``done`` or ``failed``.
+    """
+
+    __tablename__ = "ask_jobs"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)  # UUID
+    repo_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    # Full serialised AskResponse (JSON) written by the worker on completion
+    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'done', 'failed')",
+            name="chk_ask_job_status",
+        ),
+        Index("idx_ask_jobs_repo_user", "repo_id", "user_id"),
+        Index("idx_ask_jobs_status", "status"),
+    )
+
+
+
     """ORM model for ``user_memory`` table.
 
     Stores global facts about the user that apply across all repositories:

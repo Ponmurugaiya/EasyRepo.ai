@@ -275,11 +275,11 @@ async def lifespan(app: FastAPI):
 
         worker_task = asyncio.create_task(
             task_queue.run_worker_async(
-                queues=["ingestion"],
+                queues=["ingestion", "ask"],
                 install_signal_handlers=False,
             )
         )
-        logger.info("Procrastinate ingestion worker started")
+        logger.info("Procrastinate ingestion+ask worker started")
 
         yield
 

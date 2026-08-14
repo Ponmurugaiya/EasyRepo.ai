@@ -141,3 +141,218 @@ def ingest_repo_task(
             repo_name=repo_name,
         )
     logger.info("procrastinate worker: ingestion complete repo_id=%s", repo_id)
+
+
+@task_queue.task(
+    name="ask_pipeline",
+    queue="ask",
+    retry=procrastinate.RetryStrategy(max_attempts=1),
+)
+def ask_pipeline_task(
+    job_id: str,
+    repo_id: str,
+    db_url: str,
+    query: str,
+    top_k: int,
+    session_id: "str | None",
+    conversation_id: "str | None",
+    conversation_history: "list[dict]",
+    user_id: "str | None",
+    force_groq_model: "str | None",
+    force_gemini_model: str,
+    skip_groq: bool,
+    skip_gemini: bool,
+) -> None:
+    """Procrastinate task that runs the full ask pipeline asynchronously.
+
+    Runs the pipeline, citation validation, correction, and turn saving,
+    then writes the serialised AskResponse into ``ask_jobs.result``.
+
+    The ``POST /ask`` endpoint defers this task and immediately returns
+    ``{job_id, status: "pending"}``.  The frontend polls
+    ``GET /ask/{job_id}`` until status is ``done`` or ``failed``.
+    """
+    import asyncio
+    import json as _json
+    from datetime import datetime, timezone
+
+    from src.storage.db import get_session as _get_session
+    from src.storage.models import AskJobModel, RepositoryModel
+    from src.generation.llm_client import LLMProviderError
+
+    logger.info("ask_pipeline_task: starting job_id=%s repo=%s", job_id, repo_id)
+
+    def _run():
+        with _get_session(db_url) as db:
+            # Mark as running
+            job = db.query(AskJobModel).filter_by(id=job_id).first()
+            if job:
+                job.status = "running"
+                job.updated_at = datetime.now(timezone.utc)
+                db.commit()
+
+            repo = db.query(RepositoryModel).filter_by(id=repo_id).first()
+            if not repo:
+                _fail(db, job_id, "Repository not found")
+                return
+
+            try:
+                # Run the pipeline (async) inside a new event loop
+                from src.pipeline.orchestrator import run_pipeline
+                from src.api.schemas import (
+                    AskResponse, ValidationReportSchema,
+                    CitationMatchSchema, CitationMismatchSchema,
+                    ConversationTurn,
+                )
+                from src.generation.citation_validator import (
+                    validate_citations, collect_context_entities,
+                    _normalise_citations, sanitize_citations, strip_leaked_labels,
+                )
+
+                history = [
+                    ConversationTurn(role=t["role"], content=t["content"])
+                    for t in (conversation_history or [])
+                ]
+
+                loop = asyncio.new_event_loop()
+                try:
+                    pipeline_result = loop.run_until_complete(run_pipeline(
+                        query=query,
+                        repo_id=repo_id,
+                        repo=repo,
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        conversation_history=history,
+                        user_id=user_id,
+                        top_k=top_k,
+                        db=db,
+                        groq_model=force_groq_model,
+                        groq_api_key=None,
+                        gemini_model=force_gemini_model,
+                        gemini_api_key=None,
+                        skip_groq=skip_groq,
+                        skip_gemini=skip_gemini,
+                    ))
+                finally:
+                    loop.close()
+
+                answer = pipeline_result.stm.answer_text or ""
+                final_context = pipeline_result.final_context
+
+                # Post-process citations
+                answer = _normalise_citations(answer)
+                answer = sanitize_citations(answer)
+                answer = strip_leaked_labels(answer)
+
+                # Validate
+                context_entities = collect_context_entities(final_context)
+                if pipeline_result.validation_report is not None:
+                    report = pipeline_result.validation_report
+                else:
+                    report = validate_citations(
+                        answer=answer,
+                        context_entities=context_entities,
+                        final_context=final_context,
+                        db_session=db,
+                        repo_id=repo_id,
+                    )
+
+                # Correct
+                if report.unsupported_citations:
+                    try:
+                        from src.agents.citation_correction_agent import run as correct_citations
+                        correction = correct_citations(
+                            answer=answer,
+                            report=report,
+                            context_entities=context_entities,
+                            final_context=final_context,
+                            db_session=db,
+                        )
+                        answer = correction.corrected_answer
+                        report = correction.report
+                    except Exception as exc:
+                        logger.warning("ask_pipeline_task: citation correction failed: %s", exc)
+
+                # Save turns
+                if user_id and conversation_id:
+                    try:
+                        from src.memory.stm.working_memory import save_turn, summarize_after_turn
+                        from src.generation import llm_client as _llm_client
+                        save_turn(conversation_id=conversation_id, user_id=user_id,
+                                  repo_id=repo_id, role="user", content=query, db=db)
+                        save_turn(conversation_id=conversation_id, user_id=user_id,
+                                  repo_id=repo_id, role="assistant", content=answer, db=db)
+                        summarize_after_turn(
+                            conversation_id=conversation_id, db=db,
+                            llm_client=_llm_client, user_id=user_id, repo_id=repo_id,
+                        )
+                    except Exception as exc:
+                        logger.warning("ask_pipeline_task: turn save failed: %s", exc)
+
+                # Build serialisable response
+                result_dict = AskResponse(
+                    answer=answer,
+                    citations=ValidationReportSchema(
+                        total_citations=report.total_citations,
+                        definition_citations=[
+                            CitationMatchSchema(
+                                raw=c.raw, file_path=c.file_path,
+                                start_line=c.start_line, end_line=c.end_line,
+                                matched_entity_id=c.matched_entity_id,
+                                matched_entity_name=c.matched_entity_name,
+                                citation_type=c.citation_type,
+                                caller_entity_name=c.caller_entity_name,
+                                callee_entity_name=c.callee_entity_name,
+                            ) for c in report.definition_citations
+                        ],
+                        call_site_citations=[
+                            CitationMatchSchema(
+                                raw=c.raw, file_path=c.file_path,
+                                start_line=c.start_line, end_line=c.end_line,
+                                matched_entity_id=c.matched_entity_id,
+                                matched_entity_name=c.matched_entity_name,
+                                citation_type=c.citation_type,
+                                caller_entity_name=c.caller_entity_name,
+                                callee_entity_name=c.callee_entity_name,
+                            ) for c in report.call_site_citations
+                        ],
+                        unsupported_citations=[
+                            CitationMismatchSchema(
+                                raw=c.raw, file_path=c.file_path,
+                                start_line=c.start_line, end_line=c.end_line,
+                                reason=c.reason,
+                                nearest_entity=c.nearest_entity,
+                                nearest_entity_id=c.nearest_entity_id,
+                            ) for c in report.unsupported_citations
+                        ],
+                        hallucination_rate=report.hallucination_rate,
+                    ),
+                    context_entities=[e.id for e in context_entities],
+                    provider=pipeline_result.provider_used,
+                ).model_dump()
+
+                # Write result
+                job = db.query(AskJobModel).filter_by(id=job_id).first()
+                if job:
+                    job.status = "done"
+                    job.result = result_dict
+                    job.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+                logger.info("ask_pipeline_task: done job_id=%s", job_id)
+
+            except Exception as exc:
+                logger.error("ask_pipeline_task: failed job_id=%s: %s", job_id, exc, exc_info=True)
+                _fail(db, job_id, str(exc))
+
+    def _fail(db, jid: str, msg: str) -> None:
+        try:
+            j = db.query(AskJobModel).filter_by(id=jid).first()
+            if j:
+                j.status = "failed"
+                j.error = msg[:2000]
+                j.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception as e:
+            logger.warning("ask_pipeline_task: could not write failure: %s", e)
+
+    _run()
