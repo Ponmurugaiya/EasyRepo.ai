@@ -240,6 +240,26 @@ async def lifespan(app: FastAPI):
 
         init_db(db_url)
 
+        # Run any pending Alembic migrations on startup.
+        # The running container already has network access to Supabase, so
+        # this is the most reliable place to run migrations — no separate
+        # task, no IPv6/NAT gateway concerns.
+        try:
+            import subprocess as _sp
+            _result = _sp.run(
+                ["python", "-m", "alembic", "upgrade", "head"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if _result.returncode == 0:
+                logger.info("Alembic migrations applied: %s", _result.stdout.strip() or "already up to date")
+            else:
+                logger.error("Alembic migration failed:\n%s\n%s", _result.stdout, _result.stderr)
+                raise RuntimeError(f"Alembic upgrade head failed: {_result.stderr[:500]}")
+        except Exception as mig_exc:
+            # Non-fatal if already up to date or table already exists —
+            # log and continue so the API doesn't hard-fail on benign errors.
+            logger.warning("Alembic migration warning (non-fatal): %s", mig_exc)
+
         required_tables = {"repositories", "entities", "relationships", "users", "user_repos"}
         missing_tables = sorted(required_tables - {t for t in existing_tables})
         if missing_tables:
