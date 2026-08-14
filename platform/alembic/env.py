@@ -60,31 +60,48 @@ def run_migrations_online() -> None:
     # Always override with the env-resolved URL — never use the ini placeholder.
     configuration["sqlalchemy.url"] = _db_url
 
-    # Force IPv4 connections to avoid Fargate VPCs that lack IPv6 routing.
-    # Supabase hostnames resolve to both IPv4 and IPv6; psycopg2 may pick IPv6
-    # which is unreachable in many Fargate subnets.
+    # Force IPv4 for Supabase connections in Fargate — Fargate VPCs often
+    # lack IPv6 routing, but Supabase DNS returns an IPv6 address first.
+    # psycopg2's `hostaddr` parameter bypasses DNS entirely and forces the
+    # TCP connection to use the specified IP address (host= is still used for
+    # SSL certificate validation).
     import socket as _socket
-    _connect_args: dict = {}
-    if "supabase.co" in _db_url or (
-        "localhost" not in _db_url and "127.0.0.1" not in _db_url
-    ):
-        _connect_args["gssencmode"] = "disable"
-        # Monkey-patch getaddrinfo to prefer IPv4 so psycopg2 picks the right addr
-        _orig_getaddrinfo = _socket.getaddrinfo
+    from urllib.parse import urlparse as _urlparse, urlunparse as _urlunparse, \
+        parse_qs as _parse_qs, urlencode as _urlencode
 
-        def _ipv4_first(host, port, family=0, type=0, proto=0, flags=0):
-            results = _orig_getaddrinfo(host, port, family, type, proto, flags)
-            ipv4 = [r for r in results if r[0] == _socket.AF_INET]
-            ipv6 = [r for r in results if r[0] != _socket.AF_INET]
-            return ipv4 + ipv6
+    _parsed = _urlparse(_db_url)
+    _host = _parsed.hostname or ""
+    _is_remote_host = _host not in ("localhost", "127.0.0.1", "::1", "")
 
-        _socket.getaddrinfo = _ipv4_first
+    _migration_url = _db_url
+    if _is_remote_host:
+        # Resolve hostname — try IPv4 first, fall back to whatever we get
+        try:
+            _results = _socket.getaddrinfo(_host, 5432, _socket.AF_INET, _socket.SOCK_STREAM)
+            _ipv4 = _results[0][4][0]  # first IPv4 address
+        except (_socket.gaierror, IndexError):
+            try:
+                # No IPv4 available — try any address family
+                _results = _socket.getaddrinfo(_host, 5432, _socket.AF_UNSPEC, _socket.SOCK_STREAM)
+                _ipv4 = _results[0][4][0]
+            except (_socket.gaierror, IndexError):
+                _ipv4 = None
+
+        if _ipv4:
+            _params = _parse_qs(_parsed.query, keep_blank_values=True)
+            _params["hostaddr"] = [_ipv4]
+            _params.setdefault("sslmode", ["require"])
+            _params.setdefault("gssencmode", ["disable"])
+            _new_query = _urlencode({k: v[0] for k, v in _params.items()})
+            _migration_url = _urlunparse(_parsed._replace(query=_new_query))
+            print(f"alembic/env.py: resolved {_host} -> {_ipv4} (IPv4 forced via hostaddr)")
+
+    configuration["sqlalchemy.url"] = _migration_url
 
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args=_connect_args,
     )
 
     with connectable.connect() as connection:
