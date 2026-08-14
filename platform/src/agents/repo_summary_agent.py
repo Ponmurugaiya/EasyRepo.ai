@@ -268,7 +268,7 @@ def summarize_repo(
         return answer, provider
 
     except LLMProviderError:
-        # Gemini unavailable — fall back to Groq
+        # Gemini unavailable — try Groq standard next
         try:
             answer, provider, prompt_tokens, completion_tokens = _llm.smart_complete(
                 query=repo_query,
@@ -289,6 +289,64 @@ def summarize_repo(
                 )
             logger.info("RepoSummaryAgent: Gemini failed, used Groq fallback")
             return answer, provider
+        except LLMProviderError:
+            # Groq also exhausted — fall through to free cascade (NVIDIA NIM,
+            # Cloudflare, OpenRouter) downgrading to fast tier if needed.
+            try:
+                answer, provider, prompt_tokens, completion_tokens = _llm.smart_complete(
+                    query=repo_query,
+                    context=context,
+                    system_prompt=system,
+                    task_type="standard",
+                    skip_providers={"gemini", "groq", "cerebras", "cohere"},
+                )
+                elapsed_ms = (time.monotonic() - t0) * 1000
+                if trace:
+                    trace.step_llm_response(
+                        provider=provider,
+                        model="auto",
+                        answer_raw=answer,
+                        status="answered",
+                        elapsed_ms=elapsed_ms,
+                        input_tokens=prompt_tokens,
+                    )
+                logger.info("RepoSummaryAgent: Gemini+Groq failed, used %s fallback", provider)
+                return answer, provider
+            except LLMProviderError:
+                # Last resort — downgrade to fast tier (NVIDIA NIM / Cloudflare)
+                try:
+                    answer, provider, prompt_tokens, completion_tokens = _llm.smart_complete(
+                        query=repo_query,
+                        context=context,
+                        system_prompt=system,
+                        task_type="fast",
+                        skip_providers={"gemini", "groq", "cerebras", "cohere", "openrouter"},
+                    )
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    if trace:
+                        trace.step_llm_response(
+                            provider=provider,
+                            model="auto",
+                            answer_raw=answer,
+                            status="answered",
+                            elapsed_ms=elapsed_ms,
+                            input_tokens=prompt_tokens,
+                        )
+                    logger.info(
+                        "RepoSummaryAgent: all standard providers failed, used fast-tier %s",
+                        provider,
+                    )
+                    return answer, provider
+                except Exception as exc3:
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    logger.error("RepoSummaryAgent: all providers failed: %s", exc3)
+                    if trace:
+                        trace.step_llm_response(
+                            provider="unknown", model="unknown",
+                            answer_raw="", status="error", elapsed_ms=elapsed_ms,
+                        )
+                    raise LLMProviderError(str(exc3)) from exc3
+
         except Exception as exc2:
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.error("RepoSummaryAgent: all providers failed: %s", exc2)

@@ -97,6 +97,14 @@ One object per file in the same order given. No extra keys.
 _SHORT_OUTPUT_RESERVE = 512      # short summaries are compact
 _DETAILED_OUTPUT_RESERVE = 2048  # detailed summaries are longer
 
+# Max output tokens expected per file summary (used to cap batch size so we
+# don't ask for 4000+ output tokens in one call — that causes 147s latency).
+_SHORT_OUTPUT_PER_FILE = 150     # ~3 sentences × 50 tokens
+_DETAILED_OUTPUT_PER_FILE = 400  # ~8 sentences × 50 tokens
+
+# Max total output tokens per batch call — keeps latency under ~10s
+_MAX_OUTPUT_TOKENS_PER_BATCH = 800
+
 # A file is a "small" packing candidate if its tokens are below this fraction
 # of the total budget.
 _SMALL_FILE_FRACTION = 0.30
@@ -320,9 +328,15 @@ def build_batches(
                 target_model=model,
             ))
 
-    # Bin-pack small files greedily
+    # Bin-pack small files greedily — cap by both input tokens AND expected output
+    output_per_file = (
+        _DETAILED_OUTPUT_PER_FILE
+        if intent == "repository_detailed"
+        else _SHORT_OUTPUT_PER_FILE
+    )
     current_items: list[BatchItem] = []
     current_tokens = 0
+    current_output = 0
 
     for file_path, tokens, source, entities in small_candidates:
         item = BatchItem(
@@ -332,7 +346,9 @@ def build_batches(
             text=source,
             entities=entities,
         )
-        if current_tokens + tokens > pack_budget and current_items:
+        exceeds_input = current_tokens + tokens > pack_budget
+        exceeds_output = current_output + output_per_file > _MAX_OUTPUT_TOKENS_PER_BATCH
+        if (exceeds_input or exceeds_output) and current_items:
             batches.append(FileBatch(
                 items=current_items,
                 token_estimate=current_tokens,
@@ -340,9 +356,11 @@ def build_batches(
             ))
             current_items = [item]
             current_tokens = tokens
+            current_output = output_per_file
         else:
             current_items.append(item)
             current_tokens += tokens
+            current_output += output_per_file
 
     if current_items:
         batches.append(FileBatch(
@@ -352,7 +370,6 @@ def build_batches(
         ))
 
     return batches
-
 
 def execute_batch(batch: "FileBatch", intent: str) -> dict[str, str]:
     """Call the target model with this batch. Returns {file_path: summary}.
