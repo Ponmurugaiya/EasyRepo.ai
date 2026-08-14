@@ -198,6 +198,12 @@ async def ask_repository(
     answer = pipeline_result.stm.answer_text or ""
     final_context = pipeline_result.final_context
 
+    # Normalise backtick-wrapped citations [`file.py:L-L`] → [file.py:L-L]
+    # before validation and before returning to the frontend.
+    # Some fallback models (e.g. groq/compound-mini) wrap citations in backticks.
+    from src.generation.citation_validator import _normalise_citations
+    answer = _normalise_citations(answer)
+
     # ── Citation validation ───────────────────────────────────────────────────
     # If the orchestrator already ran inline citation validation (non-overview
     # intents), reuse that report — avoids a redundant DB round-trip.

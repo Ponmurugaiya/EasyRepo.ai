@@ -168,20 +168,46 @@ class ValidationReport:
 # Citation parser
 # ---------------------------------------------------------------------------
 
-# Matches: [some/path/file.py:12-34] or [some/path/file.py:12]
+# Primary: bare brackets  [some/path/file.py:12-34] or [some/path/file.py:12]
 _CITATION_RE = re.compile(
-    r"\[([^\[\]\s:]+\.[a-zA-Z0-9]+):(\d+)(?:-(\d+))?\]"
+    r"\[([^\[\]\s:`]+\.[a-zA-Z0-9]+):(\d+)(?:-(\d+))?\]"
+)
+
+# Secondary: backtick-wrapped brackets  [`some/path/file.py:12-34`]
+# Some models (e.g. Groq compound-mini) wrap citations in backticks.
+# We normalise these to bare format before validation so they count correctly.
+_CITATION_RE_BACKTICK = re.compile(
+    r"\[`([^\[\]\s:`]+\.[a-zA-Z0-9]+):(\d+)(?:-(\d+))?`\]"
 )
 
 
+def _normalise_citations(answer: str) -> str:
+    """Strip backtick wrapping from citations so the primary regex matches them.
+
+    [`file.py:1-5`]  →  [file.py:1-5]
+    """
+    return _CITATION_RE_BACKTICK.sub(
+        lambda m: f"[{m.group(1)}:{m.group(2)}" + (f"-{m.group(3)}]" if m.group(3) else "]"),
+        answer,
+    )
+
+
 def _parse_citations(answer: str) -> list[tuple[str, str, int, int, str]]:
-    """Return list of (raw, file_path, start_line, end_line, preceding_text) tuples."""
+    """Return list of (raw, file_path, start_line, end_line, preceding_text) tuples.
+
+    Handles both bare ``[file.py:L-L]`` and backtick-wrapped ``[`file.py:L-L`]``
+    citation formats — the latter is normalised before matching.
+    """
+    # Normalise backtick-wrapped citations first so the primary regex catches them
+    normalised = _normalise_citations(answer)
+
     found: list[tuple[str, str, int, int, str]] = []
-    for m in _CITATION_RE.finditer(answer):
+    for m in _CITATION_RE.finditer(normalised):
         raw = m.group(0)
         file_path = m.group(1)
         start_line = int(m.group(2))
         end_line = int(m.group(3)) if m.group(3) else start_line
+        # Preceding text from the *original* answer so context words are intact
         preceding_text = answer[max(0, m.start() - 60) : m.start()]
         found.append((raw, file_path, start_line, end_line, preceding_text))
 
