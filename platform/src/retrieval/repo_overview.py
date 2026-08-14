@@ -85,9 +85,29 @@ async def _summarize_files_async(
     if not uncached_map:
         return
 
+    # Estimate worst-case single-call token cost to filter out models with
+    # tiny context windows (e.g. allam-2-7b at 4096 ctx / 6000 TPM).
+    # Apply 1.5x overhead factor for system prompt + entity lines + formatting.
+    max_single_file_tokens = max(
+        (_estimate_tokens(source) for source, _ in uncached_map.values()),
+        default=0,
+    )
+    context_estimate = int(max_single_file_tokens * 1.5) + 400
+
     # Step 1 — pick model (quota-aware, no LLM call)
+    # Hard-exclude allam-2-7b: 4096 ctx + 6000 TPM makes it unsuitable for batch calls.
     try:
-        model = _llm.pick_model(task_type="fast")
+        model = _llm.pick_model(
+            task_type="fast",
+            estimated_tokens=context_estimate,
+            skip_providers=set(),
+        )
+        if model.model_id == "groq/allam-2-7b":
+            model = _llm.pick_next_model(
+                task_type="fast",
+                exclude_model_ids={"groq/allam-2-7b"},
+                estimated_tokens=context_estimate,
+            )
     except _llm.LLMQuotaExhaustedError:
         logger.warning("Overview: no fast models available for file summarization — skipping")
         return

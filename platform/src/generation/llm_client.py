@@ -84,7 +84,7 @@ _GROQ = [
     ModelSpec("groq/llama-3.3-70b-versatile", "groq", "standard",  128000,  8192, 30, 14400, 12000, "GROQ_API_KEY"),
     ModelSpec("groq/groq/compound-mini",      "groq", "standard",  131072,  8192, 30, 14400,  6000, "GROQ_API_KEY"),
     ModelSpec("groq/llama-3.1-8b-instant",    "groq", "fast",      131072,  8192, 30, 14400, 20000, "GROQ_API_KEY"),
-    ModelSpec("groq/allam-2-7b",              "groq", "fast",        4096,   4096, 30,  5000,  5000, "GROQ_API_KEY"),
+    ModelSpec("groq/allam-2-7b",              "groq", "fast",        3000,   4096, 30,  5000,  5000, "GROQ_API_KEY"),
 ]
 
 # ─── Gemini ──────────────────────────────────────────────────────────────────
