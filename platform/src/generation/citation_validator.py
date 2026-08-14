@@ -219,6 +219,28 @@ def sanitize_citations(answer: str) -> str:
     return cleaned
 
 
+def strip_leaked_labels(answer: str) -> str:
+    """Remove structural labels that leaked from prompt instructions into the output.
+
+    Targets patterns like:
+      "Paragraph 1 — ...", "Paragraph 2-3 — ...", "**Paragraph 1**"
+    produced when weak LLMs echo section-label guidance from the system prompt.
+
+    The regex is scoped tightly to only match "Paragraph N" patterns —
+    it does NOT touch citation brackets, file paths, or any line-number format.
+    """
+    import re as _re
+    # Match "Paragraph N", "Paragraph N-M", optionally bold-wrapped, followed by em-dash/hyphen
+    cleaned = _re.sub(
+        r'\*{0,2}Paragraph\s+\d+(?:[–—-]\d+)?\s*[–—-]\s*\*{0,2}',
+        '',
+        answer,
+    )
+    if cleaned != answer:
+        logger.warning("strip_leaked_labels: removed leaked paragraph labels from output")
+    return cleaned
+
+
 def _parse_citations(answer: str) -> list[tuple[str, str, int, int, str]]:
     """Return list of (raw, file_path, start_line, end_line, preceding_text) tuples.
 

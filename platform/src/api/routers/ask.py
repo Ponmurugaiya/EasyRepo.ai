@@ -201,9 +201,10 @@ async def ask_repository(
     # Normalise backtick-wrapped citations [`file.py:L-L`] → [file.py:L-L]
     # and strip malformed placeholder citations [file.py:start-end] produced
     # by weak models echoing the prompt's format example literally.
-    from src.generation.citation_validator import _normalise_citations, sanitize_citations
+    from src.generation.citation_validator import _normalise_citations, sanitize_citations, strip_leaked_labels
     answer = _normalise_citations(answer)
     answer = sanitize_citations(answer)
+    answer = strip_leaked_labels(answer)
 
     # ── Citation validation ───────────────────────────────────────────────────
     # If the orchestrator already ran inline citation validation (non-overview

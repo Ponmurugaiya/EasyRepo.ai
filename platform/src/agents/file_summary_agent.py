@@ -60,7 +60,7 @@ Rules:
 - Line numbers MUST be integers (e.g. 12, 45, 89). Never use placeholder words.
 - 2-3 sentences maximum per file.
 - Do NOT reproduce source code blocks.
-- Do NOT use markdown headers — inline prose only.
+- Do NOT use markdown headers, bullet points, or labels inside the summary text — prose only.
 - Cite only the single most important entity per file.
 
 When multiple files are provided, return a JSON array:
@@ -86,7 +86,7 @@ Rules:
 - Line numbers MUST be integers (e.g. 12, 45, 89). Never use placeholder words.
 - 5-8 sentences per file.
 - Do NOT reproduce source code blocks.
-- Do NOT use markdown headers — inline prose only.
+- Do NOT use markdown headers, bullet points, or labels inside the summary text — prose only.
 - Cite every named entity you mention.
 
 When multiple files are provided, return a JSON array:
