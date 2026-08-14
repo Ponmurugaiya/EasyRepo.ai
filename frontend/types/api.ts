@@ -56,6 +56,8 @@ export interface AskResponse {
   citations: ValidationReport;
   context_entities: string[];
   provider: string;
+  /** True when the answer came from the hierarchical overview pipeline. */
+  is_overview?: boolean;
 }
 
 export interface ConversationTurn {

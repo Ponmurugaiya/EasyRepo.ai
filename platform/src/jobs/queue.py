@@ -244,6 +244,104 @@ def ask_pipeline_task(
                 answer = sanitize_citations(answer)
                 answer = strip_leaked_labels(answer)
 
+                # ── Overview intent: synthetic citation report ────────────────
+                # For repository_overview / repository_detailed we don't use
+                # inline [file:line] badges in the message body.  Instead we
+                # build a ValidationReport that lists every file whose summary
+                # was used as a verified definition citation, so the CitationPanel
+                # can show "N files verified" with source-viewer links.
+                # We also strip any inline citation tokens from the answer text
+                # so the rendered message is clean prose.
+                if pipeline_result.is_overview:
+                    import re as _re
+                    from src.generation.citation_validator import (
+                        CitationMatch as _CitationMatch,
+                        ValidationReport as _ValidationReport,
+                    )
+                    from src.storage.models import EntityModel as _EntityModel
+
+                    # Strip all [file:L-L] tokens from answer text
+                    answer = _re.sub(
+                        r"\[([^\[\]\s:`]+\.[a-zA-Z0-9]+):(\d+)(?:-(\d+))?\]",
+                        "",
+                        answer,
+                    ).strip()
+
+                    # Collect one module entity per file that was visited
+                    visited_ids = pipeline_result.stm.visited_entity_ids
+                    file_summaries_used = set(pipeline_result.stm.file_summaries.keys())
+
+                    # Load module entities for files whose summaries were used
+                    def_citations: list[_CitationMatch] = []
+                    if file_summaries_used:
+                        try:
+                            module_entities = (
+                                db.query(_EntityModel)
+                                .filter(
+                                    _EntityModel.repo_id == repo_id,
+                                    _EntityModel.type == "module",
+                                    _EntityModel.file_path.in_(file_summaries_used),
+                                )
+                                .all()
+                            )
+                            for ent in module_entities:
+                                def_citations.append(_CitationMatch(
+                                    raw=f"[{ent.file_path}:{ent.start_line}-{ent.end_line}]",
+                                    file_path=ent.file_path,
+                                    start_line=ent.start_line,
+                                    end_line=ent.end_line,
+                                    matched_entity_id=ent.id,
+                                    matched_entity_name=ent.name,
+                                    citation_type="definition",
+                                ))
+                        except Exception as exc:
+                            logger.warning(
+                                "ask_pipeline_task: overview citation build failed: %s", exc
+                            )
+
+                    report = _ValidationReport(
+                        total_citations=len(def_citations),
+                        definition_citations=def_citations,
+                        call_site_citations=[],
+                        unsupported_citations=[],
+                    )
+
+                    # Build serialisable response
+                    result_dict = AskResponse(
+                        answer=answer,
+                        citations=ValidationReportSchema(
+                            total_citations=report.total_citations,
+                            definition_citations=[
+                                CitationMatchSchema(
+                                    raw=c.raw, file_path=c.file_path,
+                                    start_line=c.start_line, end_line=c.end_line,
+                                    matched_entity_id=c.matched_entity_id,
+                                    matched_entity_name=c.matched_entity_name,
+                                    citation_type=c.citation_type,
+                                    caller_entity_name=c.caller_entity_name,
+                                    callee_entity_name=c.callee_entity_name,
+                                ) for c in report.definition_citations
+                            ],
+                            call_site_citations=[],
+                            unsupported_citations=[],
+                            hallucination_rate=0.0,
+                        ),
+                        context_entities=[e.id for e in collect_context_entities(final_context)],
+                        provider=pipeline_result.provider_used,
+                        is_overview=True,
+                    ).model_dump()
+
+                    job = db.query(AskJobModel).filter_by(id=job_id).first()
+                    if job:
+                        job.status = "done"
+                        job.result = result_dict
+                        job.updated_at = datetime.now(timezone.utc)
+                        db.commit()
+                    logger.info("ask_pipeline_task: overview done job_id=%s files=%d",
+                                job_id, len(def_citations))
+                    return
+
+                # ── Normal (non-overview) citation validation + correction ────
                 # Validate
                 context_entities = collect_context_entities(final_context)
                 if pipeline_result.validation_report is not None:

@@ -155,6 +155,11 @@ class PipelineResult:
         The PipelineTrace for this run.  The caller (ask.py) must call
         ``trace.finish()`` after citation validation so the log line
         contains the real citation count.
+    is_overview:
+        True when the answer was produced by the hierarchical overview pipeline
+        (repository_overview / repository_detailed intents).  The job worker
+        uses this to build a synthetic citation report from visited files
+        rather than running the normal inline-citation validator.
     """
 
     stm: ShortTermMemory
@@ -162,6 +167,7 @@ class PipelineResult:
     validation_report: "ValidationReport | None" = None
     provider_used: str = "unknown"
     trace: "PipelineTrace | None" = None
+    is_overview: bool = False
 
 
 async def run_pipeline(
@@ -336,6 +342,7 @@ async def run_pipeline(
                 final_context=real_context,
                 provider_used="gemini",
                 trace=trace,
+                is_overview=True,
             )
         except Exception as exc:
             logger.error("Overview pipeline failed, falling back to semantic search: %s", exc)

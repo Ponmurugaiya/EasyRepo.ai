@@ -173,6 +173,10 @@ class AskResponse(BaseModel):
     context_entities: List[str]
     # Provider used: "groq" or "gemini"
     provider: str = "unknown"
+    # True when the answer came from the hierarchical overview pipeline.
+    # Frontend uses this to suppress inline citation badges and show only
+    # the citation panel listing all files used.
+    is_overview: bool = False
 
 
 class AskJobSubmittedResponse(BaseModel):
