@@ -65,28 +65,50 @@ def _build_overview_context(
     wraps each in a minimal ExpandedContext, and calls build_context() to produce
     a FinalContext with real entities.  Citation validation can then match citations
     against these entities instead of seeing an empty list.
+
+    When visited_entity_ids is empty (LTM full-repo cache hit — overview ran
+    from cache without visiting any entities), we query ALL entities for the
+    repo so the validator still has a full entity list to match against.
+    This prevents every citation in a cached overview answer being marked
+    as unsupported on the second request.
     """
     from src.storage.models import EntityModel as _EntityModel
     from src.retrieval.models import RetrievalResult
 
+    # Determine which entity IDs to load
+    entity_ids = stm.visited_entity_ids
+
     expanded: list[ExpandedContext] = []
-    if stm.visited_entity_ids:
-        try:
+    try:
+        if entity_ids:
             entities = (
                 db.query(_EntityModel)
-                .filter(_EntityModel.id.in_(stm.visited_entity_ids))
+                .filter(_EntityModel.id.in_(entity_ids))
                 .all()
             )
-            for i, ent in enumerate(entities):
-                rr = RetrievalResult(
-                    entity_id=ent.id,
-                    entity=ent,
-                    score=1.0,
-                    rank=i + 1,
-                )
-                expanded.append(ExpandedContext(core=rr))
-        except Exception as exc:
-            logger.warning("_build_overview_context: DB query failed: %s", exc)
+        else:
+            # Cache hit path — no entities were visited; load all repo entities
+            # so citation validation has something to match against.
+            logger.debug(
+                "_build_overview_context: visited_entity_ids empty (cache hit) — "
+                "loading all entities for repo %s", repo_id
+            )
+            entities = (
+                db.query(_EntityModel)
+                .filter(_EntityModel.repo_id == repo_id)
+                .all()
+            )
+
+        for i, ent in enumerate(entities):
+            rr = RetrievalResult(
+                entity_id=ent.id,
+                entity=ent,
+                score=1.0,
+                rank=i + 1,
+            )
+            expanded.append(ExpandedContext(core=rr))
+    except Exception as exc:
+        logger.warning("_build_overview_context: DB query failed: %s", exc)
 
     if expanded:
         return build_context(

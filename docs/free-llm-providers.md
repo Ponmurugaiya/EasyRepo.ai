@@ -125,7 +125,40 @@ Free tier = rate-limited but **$0, no billing required**.
 
 ---
 
-## 7. Cloudflare Workers AI — `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`
+## 7. NVIDIA NIM — `NVIDIA_API_KEY`
+
+**LiteLLM prefix:** `nvidia_nim/<org>/<model>` (internal), routed via `openai/` + `api_base`  
+**Free tier:** 1,000 credits on signup — no credit card required.  
+**Signup:** https://build.nvidia.com → Get API Key  
+**API base:** `https://integrate.api.nvidia.com/v1`
+
+### Text / Chat Models (Verified Live — August 2026)
+
+| LiteLLM internal string | Model | Context | Tier | Status |
+|---|---|---|---|---|
+| `nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b` | Nemotron Ultra 550B MoE | 262K | reasoning | ✅ Live |
+| `nvidia_nim/nvidia/nemotron-3-super-120b-a12b` | Nemotron Super 120B MoE | 262K | reasoning | ✅ Live |
+| `nvidia_nim/nvidia/llama-3.3-nemotron-super-49b-v1` | Nemotron Super 49B | 131K | standard | ✅ Live |
+| `nvidia_nim/meta/llama-3.1-70b-instruct` | Llama 3.1 70B | 131K | standard | ✅ Live |
+| `nvidia_nim/nvidia/nemotron-3-nano-30b-a3b` | Nemotron Nano 30B MoE | 262K | standard | ✅ Live |
+| `nvidia_nim/meta/llama-3.1-8b-instruct` | Llama 3.1 8B | 131K | fast | ✅ Live |
+| `nvidia_nim/nvidia/nemotron-mini-4b-instruct` | Nemotron Mini 4B | 4K | fast | ✅ Live |
+| `nvidia_nim/nvidia/llama-3.1-nemotron-ultra-253b-v1` | Nemotron Ultra 253B | 131K | reasoning | ❌ 404 |
+| `nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct` | Nemotron 70B | 131K | standard | ❌ 404 |
+| `nvidia_nim/meta/llama-3.3-70b-instruct` | Llama 3.3 70B | 128K | standard | ⚠ Timeout |
+| `nvidia_nim/nvidia/llama-3.1-nemotron-nano-8b-v1` | Nemotron Nano 8B | 131K | fast | ⚠ Timeout |
+| `nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b` | Nemotron 3.5 Lightning 30B | — | standard | ⚠ Garbled output |
+
+### Notes
+- Free tier: **40 RPM hard cap** across all models on a personal developer account — not adjustable
+- No official RPD limit documented; credits are consumed per token on large models
+- Uses OpenAI-compatible API; routed via LiteLLM `openai/` prefix with `api_base=integrate.api.nvidia.com/v1`
+- Positioned after OpenRouter in the cascade (OpenRouter NVIDIA models are fully free with no credits)
+- `nemotron-mini-4b` has a 4K context limit — only used for very short fast tasks
+
+---
+
+## 8. Cloudflare Workers AI — `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`
 
 **LiteLLM prefix:** `cloudflare/<model-id>`  
 **Free tier:** 10,000 neurons/day free (varies by model size). No credit card.  
@@ -159,7 +192,11 @@ Priority order for the `generate_answer_with_fallback` rotation:
 3. OpenRouter    — wide model variety, 50 req/day free
    Models: nvidia/nemotron-3-ultra:free → google/gemma-4-26b:free → openrouter/free
 
-4. Cerebras      — second fast-inference option (WSE hardware)
+4. NVIDIA NIM    — hosted on NVIDIA hardware, OpenAI-compatible, large model range
+   Models: nemotron-ultra-253b → nemotron-super-120b → nemotron-super-49b
+           → nemotron-70b → llama-3.3-70b → nemotron-nano-8b
+
+5. Cerebras      — second fast-inference option (WSE hardware)
    Models: llama-3.3-70b → qwen3-235b-a22b
 ```
 
@@ -176,6 +213,7 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...   # https://openrouter.ai → Keys
 CEREBRAS_API_KEY=...     # https://cloud.cerebras.ai → API Keys
 COHERE_API_KEY=...       # https://dashboard.cohere.com → API Keys (optional)
+NVIDIA_API_KEY=...       # https://build.nvidia.com → Get API Key
 ```
 
 ---
