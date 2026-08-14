@@ -44,6 +44,7 @@ from src.generation.llm_client import (
     OPENROUTER_FREE_MODELS,
     COHERE_FREE_MODELS,
     CLOUDFLARE_FREE_MODELS,
+    NVIDIA_NIM_MODELS,
     ALL_FREE_MODELS,
 )
 from src.generation.prompt_templates import build_system_prompt, render_context_for_prompt
@@ -73,6 +74,7 @@ __all__ = [
     "OPENROUTER_FREE_MODELS",
     "COHERE_FREE_MODELS",
     "CLOUDFLARE_FREE_MODELS",
+    "NVIDIA_NIM_MODELS",
     "ALL_FREE_MODELS",
     # Prompts
     "build_system_prompt",

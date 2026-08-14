@@ -66,6 +66,38 @@ JSON schema:
   "search_query": "<keyword-rich search phrase or null>",
   "confidence": <float 0.0-1.0>
 }
+
+Examples (use these to calibrate your classification):
+
+Query: "Give me an overview of this repo"
+{"intent": "repository_overview", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.97}
+
+Query: "Give me a overview of this repo"
+{"intent": "repository_overview", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.97}
+
+Query: "What does this project do?"
+{"intent": "repository_overview", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.95}
+
+Query: "How is this codebase structured?"
+{"intent": "repository_overview", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.95}
+
+Query: "Summarise the architecture"
+{"intent": "repository_overview", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.95}
+
+Query: "Walk me through the entire codebase"
+{"intent": "repository_detailed", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.96}
+
+Query: "Give me a detailed explanation of everything in this repo"
+{"intent": "repository_detailed", "retrieval_strategy": "repository_walk", "search_query": null, "confidence": 0.96}
+
+Query: "How does the AuthService class work?"
+{"intent": "feature", "retrieval_strategy": "semantic_search", "search_query": "AuthService class authentication", "confidence": 0.95}
+
+Query: "How does the login flow work?"
+{"intent": "dependency_flow", "retrieval_strategy": "semantic_search_with_graph", "search_query": "login flow authentication entry point", "confidence": 0.93}
+
+Query: "Where is CONFIG_PATH defined?"
+{"intent": "specific_lookup", "retrieval_strategy": "semantic_search", "search_query": "CONFIG_PATH definition", "confidence": 0.97}
 """
 
 # Valid intent and strategy values — used for response validation

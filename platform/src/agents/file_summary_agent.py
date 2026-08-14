@@ -53,13 +53,15 @@ def _build_context(
         for e in entities
         if e.type in ("function", "class", "method", "interface")
     )
-    # Cap source at ~1500 chars to stay within fast-model context
-    source_preview = source[:1500] + ("..." if len(source) > 1500 else "")
+    # Cap source at ~2500 chars — increased from 1500 to capture more of larger
+    # files (e.g. orchestrator.py, repo_overview.py) without exceeding fast-model
+    # context limits. llama-3.1-8b-instant handles 131K tokens comfortably.
+    source_preview = source[:2500] + ("..." if len(source) > 2500 else "")
 
     return (
         f"File: {file_path}\n\n"
         f"Indexed entities:\n{entity_lines or '  (none)'}\n\n"
-        f"Source (first 1500 chars):\n```\n{source_preview}\n```"
+        f"Source (first 2500 chars):\n```\n{source_preview}\n```"
     )
 
 
@@ -90,27 +92,21 @@ def summarize_file(
     """
     try:
         import src.generation.llm_client as _llm
-        from src.generation.llm_client import LLMProviderError
 
         context = _build_context(file_path, source, entities)
         query = f"Summarise the file `{file_path}`."
 
-        try:
-            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
-                query=query,
-                context=context,
-                system_prompt=_SYSTEM_PROMPT,
-                task_type="fast",
-                force_model="groq/llama-3.1-8b-instant",
-            )
-        except LLMProviderError:
-            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
-                query=query,
-                context=context,
-                system_prompt=_SYSTEM_PROMPT,
-                task_type="fast",
-                force_provider="gemini",
-            )
+        # No force_model/force_provider — let the full cascade run.
+        # Router prefers groq/llama-3.1-8b-instant first (fast tier, highest quota),
+        # then falls through to gemini-2.5-flash-lite → nvidia_nim → cloudflare etc.
+        # This prevents the concurrent-batch rate-limit burst seen when all 5 file
+        # agents hammered a single model simultaneously.
+        summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+            query=query,
+            context=context,
+            system_prompt=_SYSTEM_PROMPT,
+            task_type="fast",
+        )
         return summary.strip(), prompt_tokens, completion_tokens
 
     except Exception as exc:

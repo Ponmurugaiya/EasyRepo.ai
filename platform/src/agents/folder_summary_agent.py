@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 You are a code documentation assistant.
-Given summaries of individual source files within a folder, write a 3-5 sentence
-folder summary describing:
+Given summaries of individual source files within a folder, write a folder summary.
+The context header tells you exactly how many sentences to write — follow it precisely.
+
+The summary should describe:
 1. The folder's domain / responsibility (what it owns in the system)
 2. The most important files and what they each provide
 3. Key patterns across the folder (e.g. all files follow repository pattern, all expose REST routes, etc.)
@@ -26,7 +28,7 @@ folder summary describing:
 
 Rules:
 - Preserve inline citations ([file_path:start-end]) from the file summaries when you mention specific entities.
-- Keep the summary to 3-5 sentences maximum.
+- Write exactly the number of sentences specified in the context header — no more, no less.
 - Do NOT reproduce source code.
 - Do NOT use markdown headers — write flowing prose.
 """
@@ -34,7 +36,18 @@ Rules:
 
 def _build_context(folder: str, file_summaries: dict[str, str]) -> str:
     """Build the context sent to the LLM."""
-    parts = [f"Folder: {folder}\n"]
+    # Scale the requested sentence count with folder size so larger folders
+    # get proportionally richer summaries (3 sentences for 1-3 files, up to 8
+    # for folders with 10+ files).
+    n = len(file_summaries)
+    if n <= 3:
+        sentence_range = "3-4"
+    elif n <= 6:
+        sentence_range = "4-6"
+    else:
+        sentence_range = "6-8"
+
+    parts = [f"Folder: {folder}  ({n} files — write {sentence_range} sentences)\n"]
     for file_path, summary in file_summaries.items():
         parts.append(f"--- {file_path} ---\n{summary}\n")
     return "\n".join(parts)
@@ -61,27 +74,19 @@ def summarize_folder(folder: str, file_summaries: dict[str, str]) -> str:
 
     try:
         import src.generation.llm_client as _llm
-        from src.generation.llm_client import LLMProviderError
 
         context = _build_context(folder, file_summaries)
         query = f"Summarise the `{folder}` folder."
 
-        try:
-            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
-                query=query,
-                context=context,
-                system_prompt=_SYSTEM_PROMPT,
-                task_type="fast",
-                force_model="groq/llama-3.1-8b-instant",
-            )
-        except LLMProviderError:
-            summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
-                query=query,
-                context=context,
-                system_prompt=_SYSTEM_PROMPT,
-                task_type="fast",
-                force_provider="gemini",
-            )
+        # No force_model/force_provider — let the full cascade run.
+        # Same reasoning as file_summary_agent: avoids a concurrent RPM burst
+        # against a single provider when multiple folder agents run in parallel.
+        summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
+            query=query,
+            context=context,
+            system_prompt=_SYSTEM_PROMPT,
+            task_type="fast",
+        )
         return summary.strip(), prompt_tokens, completion_tokens
 
     except Exception as exc:

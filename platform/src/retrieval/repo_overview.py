@@ -187,6 +187,12 @@ async def run(
         cached = lookup_by_feature(repo_id, session_id, ltm_feature, repo, db)
         if cached:
             stm.overview_from_cache = True
+            # Restore visited entity IDs from the LTM entry so that
+            # _build_overview_context can do a targeted DB query instead of
+            # loading all entities for the repo (avoids citation validation
+            # marking every citation as unsupported on cache-hit responses).
+            if cached.source_entity_ids:
+                stm.visited_entity_ids.update(cached.source_entity_ids)
             if trace:
                 trace.step_ltm_read(outcome="hit", feature_name=ltm_feature, step=3,
                                     ltm_summary=cached.summary)
@@ -333,6 +339,9 @@ async def run(
             summary=answer,
             repo=repo,
             db=db,
+            # Persist all visited entity IDs so a future cache hit can restore
+            # them into stm.visited_entity_ids for targeted citation validation.
+            source_entity_ids=list(stm.visited_entity_ids)[:500],
         )
         if trace:
             trace.step_ltm_write(

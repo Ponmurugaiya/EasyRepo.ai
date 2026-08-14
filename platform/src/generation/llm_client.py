@@ -135,10 +135,35 @@ _CEREBRAS = [
     ModelSpec("cerebras/gemma-4-31b",  "cerebras", "standard",  131072, 4096, 30, 0, 0, "CEREBRAS_API_KEY"),
 ]
 
+# ─── NVIDIA NIM ───────────────────────────────────────────────────────────────
+# Hosted at integrate.api.nvidia.com — OpenAI-compatible API.
+# Free tier: 40 RPM hard cap per account (model-dependent credits on signup).
+# Verified live August 2026 via direct API probe. 404/timeout models excluded.
+# LiteLLM routes via openai/ prefix with a custom api_base.
+# Quota: 40 RPM, RPD not publicly documented — rpm_free=40, rpd_free=0.
+#
+# EXCLUDED (404 or consistent timeout):
+#   nvidia/llama-3.1-nemotron-ultra-253b-v1  → 404
+#   nvidia/llama-3.1-nemotron-70b-instruct   → 404
+#   meta/llama-3.3-70b-instruct              → timeout (overloaded)
+#   nvidia/llama-3.1-nemotron-nano-8b-v1     → timeout
+#   nvidia/llama-3.3-nemotron-super-49b-v1.5 → empty response
+#   nvidia/llama-3.1-nemotron-51b-instruct   → 404
+#   nvidia/nemotron-3.5-lightning-30b-a3b    → garbled output
+_NVIDIA_NIM = [
+    ModelSpec("nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",        "nvidia_nim", "reasoning", 262144, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/nvidia/nemotron-3-super-120b-a12b",        "nvidia_nim", "reasoning", 262144, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/nvidia/llama-3.3-nemotron-super-49b-v1",   "nvidia_nim", "standard",  131072, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/meta/llama-3.1-70b-instruct",              "nvidia_nim", "standard",  131072, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/nvidia/nemotron-3-nano-30b-a3b",           "nvidia_nim", "standard",  262144, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/meta/llama-3.1-8b-instruct",               "nvidia_nim", "fast",      131072, 8192, 40, 0, 0, "NVIDIA_API_KEY"),
+    ModelSpec("nvidia_nim/nvidia/nemotron-mini-4b-instruct",         "nvidia_nim", "fast",       4096,  4096, 40, 0, 0, "NVIDIA_API_KEY"),
+]
+
 # ─── Master ordered catalogue ─────────────────────────────────────────────────
 # Default cascade order: best-quality providers first within each tier.
 # The router filters this list based on task requirements before picking.
-ALL_MODEL_SPECS: list[ModelSpec] = _GROQ + _GEMINI + _OPENROUTER + _COHERE + _CLOUDFLARE + _CEREBRAS
+ALL_MODEL_SPECS: list[ModelSpec] = _GROQ + _GEMINI + _OPENROUTER + _COHERE + _CLOUDFLARE + _CEREBRAS + _NVIDIA_NIM
 
 # ─── Backwards-compat name lists (used by CLI + API routers) ─────────────────
 GROQ_MODELS: list[str]            = [m.model_id for m in _GROQ]
@@ -148,6 +173,7 @@ CEREBRAS_MODELS: list[str]        = [m.model_id for m in _CEREBRAS]
 OPENROUTER_FREE_MODELS: list[str] = [m.model_id for m in _OPENROUTER]
 COHERE_FREE_MODELS: list[str]     = [m.model_id for m in _COHERE]
 CLOUDFLARE_FREE_MODELS: list[str] = [m.model_id for m in _CLOUDFLARE]
+NVIDIA_NIM_MODELS: list[str]      = [m.model_id for m in _NVIDIA_NIM]
 ALL_FREE_MODELS: list[tuple[str, str]] = [(m.model_id, m.provider) for m in ALL_MODEL_SPECS]
 
 # ---------------------------------------------------------------------------
@@ -395,6 +421,9 @@ def _import_litellm():
 # Core single-model call
 # ---------------------------------------------------------------------------
 
+_NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+
 def _call_model(
     litellm,
     model: str,
@@ -408,18 +437,37 @@ def _call_model(
     Returns (answer_text, prompt_tokens, completion_tokens).
     Token counts come from the response usage object — exact values from the
     provider, not estimates.  Falls back to 0 if the provider omits usage.
+
+    NVIDIA NIM models (prefix ``nvidia_nim/``) are routed via the OpenAI-
+    compatible endpoint at integrate.api.nvidia.com using LiteLLM's
+    ``openai/`` prefix with a custom ``api_base``.
     """
-    kwargs: dict = dict(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": context},
-        ],
-        temperature=0.2,
-        max_tokens=max_tokens,
-    )
-    if api_key:
-        kwargs["api_key"] = api_key
+    # ── NVIDIA NIM: strip prefix, re-route via openai/ + api_base ────────────
+    if model.startswith("nvidia_nim/"):
+        nim_model = model[len("nvidia_nim/"):]  # e.g. "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+        kwargs: dict = dict(
+            model=f"openai/{nim_model}",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": context},
+            ],
+            temperature=0.2,
+            max_tokens=max_tokens,
+            api_base=_NVIDIA_NIM_BASE_URL,
+            api_key=api_key,
+        )
+    else:
+        kwargs = dict(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": context},
+            ],
+            temperature=0.2,
+            max_tokens=max_tokens,
+        )
+        if api_key:
+            kwargs["api_key"] = api_key
 
     response = litellm.completion(**kwargs)
     answer = response.choices[0].message.content
@@ -634,6 +682,7 @@ def generate_answer_with_fallback(
     skip_openrouter: bool = False,
     skip_cohere: bool = False,
     skip_cloudflare: bool = False,
+    skip_nvidia_nim: bool = False,
     # Task type hint (new)
     task_type: Optional[str] = None,
 ) -> tuple[str, str]:
@@ -648,10 +697,11 @@ def generate_answer_with_fallback(
     if skip_openrouter: skip.add("openrouter")
     if skip_cohere:     skip.add("cohere")
     if skip_cloudflare: skip.add("cloudflare")
+    if skip_nvidia_nim: skip.add("nvidia_nim")
 
     # Determine force_provider from legacy single-provider skip pattern
     force_provider: Optional[str] = None
-    all_providers = {"groq", "gemini", "cerebras", "openrouter", "cohere", "cloudflare"}
+    all_providers = {"groq", "gemini", "cerebras", "openrouter", "cohere", "cloudflare", "nvidia_nim"}
     active = all_providers - skip
     if len(active) == 1:
         force_provider = next(iter(active))
