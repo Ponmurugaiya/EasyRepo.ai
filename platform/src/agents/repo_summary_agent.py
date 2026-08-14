@@ -44,6 +44,7 @@ Output format — write in Markdown using this structure:
 
   ## Architecture
   - One bullet per main folder/layer — bold the folder path, then describe what it owns
+  - For the folder labelled "(root)", describe it as the top-level directory using the repo name
   - Example: **`src/api/`** — HTTP layer, handles requests and Cognito auth
 
   ## Key entry points
@@ -81,6 +82,7 @@ Output format — write in Markdown using this structure:
   - 2-3 bullets summarising the whole project (purpose, stack, main concerns)
 
   ### `folder/path/` — short title describing the folder's role
+  - For the folder labelled "(root)", use the repo name as the section title
   - One bullet per file: file path in backticks, what it does, inline citation if available
   - One bullet for cross-folder dependencies (what this folder imports from or exports to others)
   (repeat one section per folder)
@@ -183,8 +185,9 @@ def _build_context(
         )
 
     # 3. Folder summaries with citations
+    # Rename '.' to '(root)' so the LLM doesn't output a literal dot as a section title
     folder_parts = [
-        f"=== {folder} ===\n{summary}"
+        f"=== {folder if folder != '.' else '(root)'} ===\n{summary}"
         for folder, summary in sorted(folder_summaries.items())
     ]
     parts.append("\n\n".join(folder_parts))
