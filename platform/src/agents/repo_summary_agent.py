@@ -55,8 +55,9 @@ Paragraph 5 — Entry points and navigation
   - You MAY reproduce the project structure tree as a code block so the reader can see the layout.
 
 Citation rules (CRITICAL):
-  - Use ONLY [file_path:start_line-end_line] citations that appear in the folder summaries.
-  - Do NOT invent file paths or line numbers.
+  - Use ONLY citations that already appear verbatim in the folder summaries — copy them exactly.
+  - Citation format is [file_path:start_line-end_line] where start_line and end_line are INTEGERS.
+  - NEVER invent file paths, line numbers, or write placeholder words like "start" or "end".
   - File paths in prose (not citations) must exactly match the PROJECT STRUCTURE tree.
 
 Do NOT use <answer_json> blocks — write Markdown prose directly.
@@ -90,8 +91,9 @@ Cross-reference sections:
   end-to-end paths through the codebase (e.g. request → processing → response).
 
 Citation rules (CRITICAL):
-  - Use ONLY [file_path:start_line-end_line] citations that appear in the folder summaries.
-  - Do NOT invent file paths or line numbers.
+  - Use ONLY citations that already appear verbatim in the folder summaries — copy them exactly.
+  - Citation format is [file_path:start_line-end_line] where start_line and end_line are INTEGERS.
+  - NEVER invent file paths, line numbers, or write placeholder words like "start" or "end".
   - File paths in prose and code blocks must exactly match the PROJECT STRUCTURE tree.
 
 Do NOT use <answer_json> blocks — write Markdown directly.

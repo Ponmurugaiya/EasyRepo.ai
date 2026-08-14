@@ -51,11 +51,13 @@ For each file provided, write a SHORT summary of 2-3 sentences describing:
 2. The most important class or function, with an inline citation
 3. Its main external dependencies
 
-Citation format: [file_path:start_line-end_line]
+Citation format: [file_path:start_line-end_line]   ← use REAL INTEGER line numbers from the entity list
 Example: "The `authenticate` function [auth/service.py:45-89] validates JWT tokens."
+Bad example (NEVER do this): [auth/service.py:start-end] or [auth/service.py:start-4]
 
 Rules:
-- Use entity line numbers exactly as provided — do NOT guess.
+- Use entity line numbers exactly as provided — do NOT use the words "start" or "end".
+- Line numbers MUST be integers (e.g. 12, 45, 89). Never use placeholder words.
 - 2-3 sentences maximum per file.
 - Do NOT reproduce source code blocks.
 - Do NOT use markdown headers — inline prose only.
@@ -75,11 +77,13 @@ For each file provided, write a DETAILED summary of 5-8 sentences describing:
 4. External dependencies and what they are used for
 5. Notable patterns (e.g. singleton, factory, middleware, event-driven)
 
-Citation format: [file_path:start_line-end_line]
+Citation format: [file_path:start_line-end_line]   ← use REAL INTEGER line numbers from the entity list
 Example: "The `authenticate` function [auth/service.py:45-89] validates JWT tokens."
+Bad example (NEVER do this): [auth/service.py:start-end] or [auth/service.py:start-4]
 
 Rules:
-- Use entity line numbers exactly as provided — do NOT guess.
+- Use entity line numbers exactly as provided — do NOT use the words "start" or "end".
+- Line numbers MUST be integers (e.g. 12, 45, 89). Never use placeholder words.
 - 5-8 sentences per file.
 - Do NOT reproduce source code blocks.
 - Do NOT use markdown headers — inline prose only.

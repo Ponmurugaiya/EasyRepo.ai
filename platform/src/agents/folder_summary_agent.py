@@ -34,7 +34,8 @@ The summary should describe:
 3. Key patterns across the folder (e.g. all files follow repository pattern, all expose REST routes)
 
 Rules:
-- Preserve inline citations ([file_path:start-end]) from the file summaries when you mention specific entities.
+- Preserve inline citations exactly as they appear in the file summaries — copy them verbatim.
+  Example citation format: [src/api/main.py:12-45]  ← integers only, never words like "start" or "end"
 - Write exactly the number of sentences specified in the context header — no more, no less.
 - Do NOT reproduce source code.
 - Do NOT use markdown headers — write flowing prose.
@@ -53,7 +54,8 @@ The summary should describe:
 5. External dependencies the folder introduces
 
 Rules:
-- Preserve inline citations ([file_path:start-end]) from the file summaries when you mention specific entities.
+- Preserve inline citations exactly as they appear in the file summaries — copy them verbatim.
+  Example citation format: [src/api/main.py:12-45]  ← integers only, never words like "start" or "end"
 - Write exactly the number of sentences specified in the context header — no more, no less.
 - Do NOT reproduce source code.
 - Do NOT use markdown headers — write flowing prose.

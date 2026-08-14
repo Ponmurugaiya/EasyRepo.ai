@@ -199,10 +199,11 @@ async def ask_repository(
     final_context = pipeline_result.final_context
 
     # Normalise backtick-wrapped citations [`file.py:L-L`] → [file.py:L-L]
-    # before validation and before returning to the frontend.
-    # Some fallback models (e.g. groq/compound-mini) wrap citations in backticks.
-    from src.generation.citation_validator import _normalise_citations
+    # and strip malformed placeholder citations [file.py:start-end] produced
+    # by weak models echoing the prompt's format example literally.
+    from src.generation.citation_validator import _normalise_citations, sanitize_citations
     answer = _normalise_citations(answer)
+    answer = sanitize_citations(answer)
 
     # ── Citation validation ───────────────────────────────────────────────────
     # If the orchestrator already ran inline citation validation (non-overview

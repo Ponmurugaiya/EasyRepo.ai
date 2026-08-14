@@ -192,6 +192,33 @@ def _normalise_citations(answer: str) -> str:
     )
 
 
+# Matches malformed placeholder citations like [file.py:start-4] or [file.py:start-end]
+# produced when weak LLMs echo the prompt's placeholder text literally.
+_PLACEHOLDER_CITATION_RE = re.compile(
+    r"\[([^\[\]\s:`]+\.[a-zA-Z0-9]+):(?:start|end)(?:-(?:\d+|start|end))?\]",
+    re.IGNORECASE,
+)
+
+
+def sanitize_citations(answer: str) -> str:
+    """Remove malformed placeholder citations that contain 'start' or 'end' as line numbers.
+
+    These are produced when weak LLMs echo the prompt's citation format example
+    literally (e.g. [file_path:start-end] or [nodes/file.py:start-4]).
+    They fail the citation regex, are invisible to validation/correction, and
+    appear as raw broken text in the rendered output.
+
+    Strips them completely rather than leaving confusing broken text.
+    """
+    cleaned, count = _PLACEHOLDER_CITATION_RE.subn("", answer)
+    if count:
+        logger.warning(
+            "sanitize_citations: removed %d malformed placeholder citation(s). "
+            "Preview: %.200s", count, answer[:200],
+        )
+    return cleaned
+
+
 def _parse_citations(answer: str) -> list[tuple[str, str, int, int, str]]:
     """Return list of (raw, file_path, start_line, end_line, preceding_text) tuples.
 
