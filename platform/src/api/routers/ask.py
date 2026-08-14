@@ -36,6 +36,7 @@ from src.api.schemas import (
 )
 from src.generation import GROQ_MODEL_NAMES
 from src.storage.models import AskJobModel, UserModel
+from src.jobs.queue import ask_pipeline_task
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -106,7 +107,6 @@ async def ask_repository(
         "postgresql://postgres:postgres@127.0.0.1:5435/easyrepo",
     )
     try:
-        from src.jobs.queue import ask_pipeline_task
         await ask_pipeline_task.defer_async(
             job_id=job_id,
             repo_id=repo_id,
