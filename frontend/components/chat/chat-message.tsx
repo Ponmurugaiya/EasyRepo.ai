@@ -11,6 +11,7 @@ import { buildCitationMap } from "../../lib/citations";
 import type { ResolvedCitation } from "../../lib/citations";
 import { useGraphStore } from "../../store/graph-store";
 import { ThinkingIndicator } from "./thinking-indicator";
+import type { AskJobProgress } from "../../lib/api";
 
 // Regex matching all inline [file:L-L] citation tokens the LLM may have left
 // in the answer text. Stripped for overview responses so the prose is clean.
@@ -20,9 +21,11 @@ interface ChatMessageProps {
   message: ChatMessageType;
   /** The repo id, needed to fetch entity source code */
   repoId: string;
+  /** Live pipeline progress — only set on the in-flight loading message */
+  jobProgress?: AskJobProgress | null;
 }
 
-export function ChatMessage({ message, repoId }: ChatMessageProps) {
+export function ChatMessage({ message, repoId, jobProgress }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
   const { highlightEntity } = useGraphStore();
@@ -73,7 +76,7 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
           <Bot className="h-4 w-4 text-white" />
         </div>
         <div className="pt-1">
-          <ThinkingIndicator />
+          <ThinkingIndicator progress={jobProgress ?? undefined} />
         </div>
       </div>
     );

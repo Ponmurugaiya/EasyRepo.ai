@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db, get_accessible_repository, get_current_user
 from src.api.schemas import (
+    AskJobProgressSchema,
     AskJobStatusResponse,
     AskJobSubmittedResponse,
     AskRequest,
@@ -164,11 +165,20 @@ async def get_ask_job(
     if job.status == "done" and job.result:
         result = AskResponse.model_validate(job.result)
 
+    # Build progress schema from the stored JSON (present while running)
+    progress: Optional[AskJobProgressSchema] = None
+    if job.status == "running" and job.progress:
+        try:
+            progress = AskJobProgressSchema.model_validate(job.progress)
+        except Exception:
+            pass
+
     return AskJobStatusResponse(
         job_id=job.id,
         status=job.status,
         result=result,
         error=job.error,
+        progress=progress,
     )
 
 

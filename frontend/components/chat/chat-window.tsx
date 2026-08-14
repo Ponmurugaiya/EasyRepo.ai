@@ -3,8 +3,9 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useChatStore } from "../../store/chat-store";
 import { useAuthStore } from "../../store/auth-store";
-import { askRepository, ApiError } from "../../lib/api";
+import { submitAskJob, getAskJob, ApiError } from "../../lib/api";
 import { friendlyMessage } from "../../lib/errors";
+import { sleep } from "../../lib/utils";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { EmptyState } from "./empty-state";
@@ -15,6 +16,7 @@ import { ScrollArea } from "../../components/ui/scroll-area";
 import { LogIn } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import type { RepoSession } from "../../types/chat";
+import type { AskJobProgress } from "../../lib/api";
 
 interface ChatWindowProps {
   repo: RepoSession;
@@ -50,6 +52,8 @@ export function ChatWindow({ repo }: ChatWindowProps) {
   // Login modal state — can be opened from the header button or follow-up gate
   const [loginOpen, setLoginOpen] = useState(false);
   const [followUpGate, setFollowUpGate] = useState(false);
+  // Live pipeline progress from the backend while a job is running
+  const [jobProgress, setJobProgress] = useState<AskJobProgress | null>(null);
 
   function openLoginForFollowUp() {
     setFollowUpGate(true);
@@ -101,6 +105,7 @@ export function ChatWindow({ repo }: ChatWindowProps) {
 
       addUserMessage(repo.repoId, content);
       const loadingId = addLoadingMessage(repo.repoId);
+      setJobProgress(null);
 
       // Snapshot conversation history BEFORE adding the new user message
       const MAX_HISTORY_TURNS = 20;
@@ -115,7 +120,8 @@ export function ChatWindow({ repo }: ChatWindowProps) {
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
       try {
-        const response = await askRepository(
+        // Submit job — returns immediately with job_id
+        const submitted = await submitAskJob(
           repo.repoId,
           {
             query: content,
@@ -125,16 +131,54 @@ export function ChatWindow({ repo }: ChatWindowProps) {
           },
           controller.signal
         );
-        resolveLoadingMessage(repo.repoId, loadingId, response);
+
+        // Poll until done/failed, updating progress on each tick
+        const POLL_INTERVAL_MS = 2000;
+        const TIMEOUT_MS = 120_000;
+        const deadline = Date.now() + TIMEOUT_MS;
+
+        while (Date.now() < deadline) {
+          if (controller.signal.aborted) throw new ApiError("Request cancelled.", 0);
+          await sleep(POLL_INTERVAL_MS);
+          if (controller.signal.aborted) throw new ApiError("Request cancelled.", 0);
+
+          const job = await getAskJob(repo.repoId, submitted.job_id, controller.signal);
+
+          // Update live progress whenever it's present
+          if (job.progress) {
+            setJobProgress(job.progress);
+          }
+
+          if (job.status === "done" && job.result) {
+            setJobProgress(null);
+            resolveLoadingMessage(repo.repoId, loadingId, job.result);
+            return;
+          }
+
+          if (job.status === "failed") {
+            setJobProgress(null);
+            throw new ApiError(
+              job.error ?? "The request failed on the server. Please try again.",
+              500
+            );
+          }
+        }
+
+        throw new ApiError(
+          "Request timed out. The server is taking too long — please try again.",
+          408
+        );
       } catch (err: unknown) {
         // User-initiated cancel — remove the loading bubble silently
         if (
           (err instanceof DOMException && err.name === "AbortError") ||
           (err instanceof ApiError && err.status === 0)
         ) {
+          setJobProgress(null);
           removePendingMessage(repo.repoId, loadingId);
           return;
         }
+        setJobProgress(null);
         const msg =
           err instanceof ApiError
             ? friendlyMessage(err)
@@ -186,7 +230,18 @@ export function ChatWindow({ repo }: ChatWindowProps) {
           <ScrollArea className="h-full">
             <div className="pb-4">
               {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} repoId={repo.repoId} />
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  repoId={repo.repoId}
+                  jobProgress={
+                    message.role === "assistant" &&
+                    "loading" in message &&
+                    (message as { loading?: boolean }).loading
+                      ? jobProgress
+                      : null
+                  }
+                />
               ))}
               <div ref={bottomRef} />
             </div>

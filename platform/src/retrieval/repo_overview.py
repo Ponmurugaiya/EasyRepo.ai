@@ -54,6 +54,8 @@ async def _summarize_files_async(
     trace: Optional["PipelineTrace"],
     intent: str,
     semaphore: asyncio.Semaphore,
+    on_progress=None,
+    files_total: int = 0,
 ) -> None:
     """Model-first, adaptive bin-packing file summarizer.
 
@@ -174,6 +176,15 @@ async def _summarize_files_async(
                                 summary=result[item.file_path],
                             )
 
+                # Fire progress update with current done count
+                if on_progress and files_total > 0:
+                    done_now = len(stm.file_summaries) + len(chunk_results)
+                    on_progress(
+                        "reading_files", "overview",
+                        files_done=min(done_now, files_total),
+                        files_total=files_total,
+                    )
+
     # Step 3 — execute all batches concurrently
     await asyncio.gather(*[_run_batch(b) for b in batches])
 
@@ -238,6 +249,7 @@ async def run(
     db: Session,
     trace: Optional["PipelineTrace"],
     stm: "ShortTermMemory",
+    on_progress=None,
 ) -> str:
     """Run the full hierarchical overview pipeline and return the final answer.
 
@@ -287,6 +299,11 @@ async def run(
                 trace.step_ltm_read(outcome="hit", feature_name=ltm_feature, step=3,
                                     ltm_summary=cached.summary)
             logger.info("Overview: LTM full-repo hit for %s", ltm_feature)
+            # Signal reading_files with total from cache so counter shows N/N
+            if on_progress:
+                _cached_total = len(cached.source_entity_ids) if cached.source_entity_ids else 1
+                on_progress("reading_files", "overview",
+                            files_done=_cached_total, files_total=_cached_total)
             return cached.summary
         if trace:
             trace.step_ltm_read(outcome="miss", feature_name=ltm_feature, step=3)
@@ -296,6 +313,12 @@ async def run(
 
     if not file_entity_map:
         return "No files found in the repository index."
+
+    total_files = len(file_entity_map)
+
+    # Signal: starting file reading — 0/N
+    if on_progress:
+        on_progress("reading_files", "overview", files_done=0, files_total=total_files)
 
     # ── Step 3: Load cached folder summaries from LTM ────────────────────────
     folders: dict[str, list[str]] = defaultdict(list)  # folder → [file_paths]
@@ -326,7 +349,10 @@ async def run(
 
     # ── Step 4: File Agents (model-first bin-packed, fully concurrent) ──────
     semaphore = asyncio.Semaphore(_SEMAPHORE_SIZE)
-    await _summarize_files_async(file_entity_map, repo_id, stm, trace, intent, semaphore)
+    await _summarize_files_async(
+        file_entity_map, repo_id, stm, trace, intent, semaphore,
+        on_progress=on_progress, files_total=total_files,
+    )
 
     # ── Step 5: Folder Agents (parallel, same semaphore) ─────────────────────
     from src.agents.folder_summary_agent import summarize_folder
@@ -394,6 +420,15 @@ async def run(
         for folder, file_paths in folders.items()
     ])
 
+    # Signal: all files read — show final count before moving to insights
+    if on_progress:
+        on_progress("reading_files", "overview",
+                    files_done=total_files, files_total=total_files)
+
+    # Signal: getting required insights (folder aggregation done, moving to repo agent)
+    if on_progress:
+        on_progress("insights", "overview")
+
     if trace:
         trace.step_overview_assembled(
             file_count=len(stm.file_summaries),
@@ -403,6 +438,10 @@ async def run(
 
     # ── Step 6: Repo Summary Agent ────────────────────────────────────────────
     from src.agents.repo_summary_agent import summarize_repo
+
+    # Signal: generating final response
+    if on_progress:
+        on_progress("generating", "overview")
 
     try:
         answer, provider = summarize_repo(
