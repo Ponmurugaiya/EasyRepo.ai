@@ -5,7 +5,6 @@ import { cn } from "../../lib/utils";
 import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
 import { useAuthStore } from "../../store/auth-store";
-import { listRepositories } from "../../lib/api";
 import { RepoItem } from "./repo-item";
 import { DevLoginModal } from "../../components/auth/dev-login-modal";
 import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
@@ -93,13 +92,12 @@ export function Sidebar() {
         // best-effort
       }
     }
+    // Clear all auth and session state immediately — don't wait for the network
     clearToken();
-    try {
-      const repos = await listRepositories();
-      syncRepoSessions(repos);
-    } catch {
-      // non-fatal
-    }
+    closeGraph();
+    // Wipe repos, conversations and active repo from the store so the
+    // signed-out user never sees the previous user's data
+    syncRepoSessions([]);
   }
 
   return (
