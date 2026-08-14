@@ -37,8 +37,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Max files to process per async batch (controls concurrency vs. rate-limit risk)
-_BATCH_SIZE = int(os.environ.get("OVERVIEW_BATCH_SIZE", "5"))
+# Max concurrent LLM calls across file batches + folder agents combined
+_SEMAPHORE_SIZE = int(os.environ.get("OVERVIEW_CONCURRENCY", "8"))
 
 
 def _folder_for_file(file_path: str) -> str:
@@ -52,49 +52,115 @@ async def _summarize_files_async(
     repo_id: str,
     stm: "ShortTermMemory",
     trace: Optional["PipelineTrace"],
+    intent: str,
+    semaphore: asyncio.Semaphore,
 ) -> None:
-    """Run File Agents concurrently in batches.
+    """Model-first, adaptive bin-packing file summarizer.
+
+    Flow:
+      1. pick_model()      — select best available fast model (quota-aware, no call)
+      2. build_batches()   — bin-pack uncached files into token-sized batches
+      3. asyncio.gather()  — execute all batches concurrently (semaphore-limited)
+      4. retry_batch()     — on failure, pick next model; re-split if window is smaller
+      5. merge chunks      — join chunk summaries into one per file_path
+      6. populate stm      — file_summaries + visited_entity_ids
 
     Populates stm.file_summaries and stm.visited_entity_ids in-place.
     Skips files already present in stm.file_summaries (loaded from LTM).
     """
-    from src.agents.file_summary_agent import summarize_file
+    import src.generation.llm_client as _llm
+    from src.agents.file_summary_agent import (
+        build_batches,
+        execute_batch,
+        retry_batch,
+        merge_chunk_summaries,
+        _estimate_tokens,
+    )
 
-    files_to_process = [
-        (fp, source, entities)
-        for fp, (source, entities) in file_entity_map.items()
+    uncached_map = {
+        fp: v
+        for fp, v in file_entity_map.items()
         if fp not in stm.file_summaries
-    ]
-
-    if not files_to_process:
+    }
+    if not uncached_map:
         return
 
-    async def _process_one(file_path: str, source: str, entities: "list[EntityModel]") -> None:
-        t0 = time.monotonic()
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: summarize_file(file_path, source, entities, repo_id),
-        )
-        elapsed = (time.monotonic() - t0) * 1000
-        summary, prompt_tokens, completion_tokens = result
-        stm.file_summaries[file_path] = summary
-        # Track entity IDs as visited
+    # Step 1 — pick model (quota-aware, no LLM call)
+    try:
+        model = _llm.pick_model(task_type="fast")
+    except _llm.LLMQuotaExhaustedError:
+        logger.warning("Overview: no fast models available for file summarization — skipping")
+        return
+
+    # Step 2 — bin-pack into batches sized for the selected model's context window
+    batches = build_batches(uncached_map, model, intent)
+    logger.info(
+        "Overview: %d files → %d batches (model=%s, intent=%s)",
+        len(uncached_map), len(batches), model.model_id, intent,
+    )
+
+    # Accumulate chunk results: file_path → [(chunk_index, total_chunks, summary)]
+    chunk_results: dict[str, list[tuple[int, int, str]]] = {}
+    chunk_lock = asyncio.Lock()
+
+    async def _run_batch(batch) -> None:
+        async with semaphore:
+            t0 = time.monotonic()
+            loop = asyncio.get_running_loop()
+            tried = {batch.target_model.model_id}
+            try:
+                result = await loop.run_in_executor(
+                    None, lambda b=batch: execute_batch(b, intent)
+                )
+            except _llm.LLMProviderError as exc:
+                logger.warning(
+                    "Overview: batch failed (%s) — retrying with next model: %s",
+                    batch.target_model.model_id, exc,
+                )
+                try:
+                    result = await loop.run_in_executor(
+                        None, lambda b=batch: retry_batch(b, intent, tried)
+                    )
+                except Exception as retry_exc:
+                    logger.warning("Overview: batch retry failed: %s", retry_exc)
+                    result = {}
+            except Exception as exc:
+                logger.warning("Overview: batch unexpected error: %s", exc)
+                result = {}
+
+            elapsed = (time.monotonic() - t0) * 1000
+
+            # Store chunk results
+            async with chunk_lock:
+                for item in batch.items:
+                    summary_text = result.get(item.file_path, "")
+                    if summary_text:
+                        chunk_results.setdefault(item.file_path, []).append(
+                            (item.chunk_index, item.total_chunks, summary_text)
+                        )
+
+                if trace:
+                    for item in batch.items:
+                        if item.file_path in result:
+                            trace.step_file_agent(
+                                file_path=item.file_path,
+                                tokens=_estimate_tokens(item.text),
+                                elapsed_ms=elapsed,
+                                from_cache=False,
+                                summary=result[item.file_path],
+                            )
+
+    # Step 3 — execute all batches concurrently
+    await asyncio.gather(*[_run_batch(b) for b in batches])
+
+    # Step 4 — merge chunk results into final per-file summaries
+    for fp, chunks in chunk_results.items():
+        sorted_chunks = [s for _, _, s in sorted(chunks, key=lambda x: x[0])]
+        stm.file_summaries[fp] = merge_chunk_summaries(fp, sorted_chunks)
+        # Mark entities as visited
+        _, entities = uncached_map.get(fp, ("", []))
         for ent in entities:
             stm.visited_entity_ids.add(ent.id)
-        if trace:
-            trace.step_file_agent(
-                file_path=file_path,
-                tokens=prompt_tokens,
-                elapsed_ms=elapsed,
-                from_cache=False,
-                summary=summary,
-            )
-
-    # Process in batches to limit concurrent API calls
-    for i in range(0, len(files_to_process), _BATCH_SIZE):
-        batch = files_to_process[i : i + _BATCH_SIZE]
-        await asyncio.gather(*[_process_one(fp, src, ents) for fp, src, ents in batch])
 
 
 def _build_file_entity_map(
@@ -234,15 +300,16 @@ async def run(
                     trace.step_ltm_read(outcome="hit", feature_name=folder_feature, step=3,
                                         ltm_summary=cached_folder.summary)
 
-    # ── Step 4: File Agents (async batched) for uncached files ───────────────
-    await _summarize_files_async(file_entity_map, repo_id, stm, trace)
+    # ── Step 4: File Agents (model-first bin-packed, fully concurrent) ──────
+    semaphore = asyncio.Semaphore(_SEMAPHORE_SIZE)
+    await _summarize_files_async(file_entity_map, repo_id, stm, trace, intent, semaphore)
 
-    # ── Step 5: Folder Agents for uncached folders ───────────────────────────
+    # ── Step 5: Folder Agents (parallel, same semaphore) ─────────────────────
     from src.agents.folder_summary_agent import summarize_folder
 
-    for folder, file_paths in folders.items():
+    async def _summarize_one_folder(folder: str, file_paths: list) -> None:
         if folder in stm.folder_summaries:
-            continue  # already loaded from LTM
+            return  # already loaded from LTM
 
         folder_file_summaries = {
             fp: stm.file_summaries[fp]
@@ -250,13 +317,15 @@ async def run(
             if fp in stm.file_summaries
         }
         if not folder_file_summaries:
-            continue
+            return
 
-        t0 = time.monotonic()
-        folder_result = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda f=folder, ffs=folder_file_summaries: summarize_folder(f, ffs),
-        )
+        async with semaphore:
+            t0 = time.monotonic()
+            loop = asyncio.get_running_loop()
+            folder_result = await loop.run_in_executor(
+                None,
+                lambda f=folder, ffs=folder_file_summaries: summarize_folder(f, ffs, intent),
+            )
         elapsed = (time.monotonic() - t0) * 1000
         folder_summary, folder_prompt_tokens, _ = folder_result
         stm.folder_summaries[folder] = folder_summary
@@ -295,6 +364,11 @@ async def run(
                     step=5,
                     summary=folder_summary,
                 )
+
+    await asyncio.gather(*[
+        _summarize_one_folder(folder, file_paths)
+        for folder, file_paths in folders.items()
+    ])
 
     if trace:
         trace.step_overview_assembled(

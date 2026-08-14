@@ -176,13 +176,26 @@ def _llm_correction_pass(
         )
 
         try:
-            corrected_paragraph, _, _, _ = _llm.smart_complete(
-                query="Fix the invalid citation in this paragraph.",
-                context=context,
-                system_prompt=_CORRECTION_SYSTEM,
-                task_type="fast",
-                force_model="groq/llama-3.1-8b-instant",
-            )
+            # Primary: NVIDIA NIM — 40 RPM, no RPD cap.
+            # Deliberately avoids Groq here to prevent RPM contention with
+            # the QueryPlanner (which pins groq/llama-3.1-8b-instant).
+            try:
+                corrected_paragraph, _, _, _ = _llm.smart_complete(
+                    query="Fix the invalid citation in this paragraph.",
+                    context=context,
+                    system_prompt=_CORRECTION_SYSTEM,
+                    task_type="fast",
+                    force_provider="nvidia_nim",
+                )
+            except _llm.LLMProviderError:
+                # NIM unavailable — fall back to Gemini Flash-Lite then Groq
+                corrected_paragraph, _, _, _ = _llm.smart_complete(
+                    query="Fix the invalid citation in this paragraph.",
+                    context=context,
+                    system_prompt=_CORRECTION_SYSTEM,
+                    task_type="fast",
+                    skip_providers={"openrouter", "cohere", "cloudflare", "cerebras"},
+                )
             corrected_paragraph = corrected_paragraph.strip()
 
             # Replace the original paragraph in the answer

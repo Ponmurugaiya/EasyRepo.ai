@@ -246,12 +246,26 @@ def summarize_after_turn(
         )
 
         try:
-            raw_response, _, _, _ = llm_client.generate_answer_with_fallback(
-                query="Summarize and extract memories from this conversation",
-                context=condensation_input,
-                system_prompt=system_prompt,
-                groq_model="llama-3.1-8b-instant",
-            )
+            # Primary: Gemini Flash-Lite (15 RPM, 1000 RPD).
+            # Deliberately avoids Groq to prevent RPM contention with
+            # QueryPlanner and citation correction which run concurrently.
+            try:
+                raw_response, _, _, _ = llm_client.smart_complete(
+                    query="Summarize and extract memories from this conversation",
+                    context=condensation_input,
+                    system_prompt=system_prompt,
+                    task_type="fast",
+                    force_provider="gemini",
+                )
+            except llm_client.LLMProviderError:
+                # Gemini exhausted — fall back to NVIDIA NIM then Groq
+                raw_response, _, _, _ = llm_client.smart_complete(
+                    query="Summarize and extract memories from this conversation",
+                    context=condensation_input,
+                    system_prompt=system_prompt,
+                    task_type="fast",
+                    skip_providers={"openrouter", "cohere", "cloudflare", "cerebras"},
+                )
         except Exception as llm_exc:
             logger.warning("summarize_after_turn: LLM call failed: %s", llm_exc)
             return

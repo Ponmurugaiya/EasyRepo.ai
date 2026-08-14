@@ -306,6 +306,55 @@ def _count_tokens_approx(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def pick_model(
+    task_type: str = "fast",
+    estimated_tokens: int = 0,
+    skip_providers: Optional[set[str]] = None,
+) -> "ModelSpec":
+    """Return the best available ModelSpec for the task without making an LLM call.
+
+    Used by the bin-packing scheduler to know ``max_context`` before building
+    batches.  Raises ``LLMQuotaExhaustedError`` if nothing is available.
+    """
+    candidates = _select_candidates(
+        task_type=task_type,
+        estimated_tokens=estimated_tokens,
+        skip_providers=skip_providers or set(),
+    )
+    if not candidates:
+        raise LLMQuotaExhaustedError(
+            f"No models available for task_type={task_type!r}, "
+            f"context={estimated_tokens} tokens. "
+            "Check that API keys are set and quota is not exhausted."
+        )
+    return candidates[0]
+
+
+def pick_next_model(
+    task_type: str = "fast",
+    exclude_model_ids: Optional[set[str]] = None,
+    estimated_tokens: int = 0,
+) -> "ModelSpec":
+    """Return the next best available ModelSpec, excluding already-tried models.
+
+    Used by retry logic in the batch summarizer to fall through to the next
+    provider when the primary model fails or its context window is too small
+    for a given batch.  Raises ``LLMQuotaExhaustedError`` if nothing remains.
+    """
+    exclude = exclude_model_ids or set()
+    candidates = _select_candidates(
+        task_type=task_type,
+        estimated_tokens=estimated_tokens,
+    )
+    remaining = [c for c in candidates if c.model_id not in exclude]
+    if not remaining:
+        raise LLMQuotaExhaustedError(
+            f"No remaining models for task_type={task_type!r} after excluding "
+            f"{exclude}. All quota exhausted."
+        )
+    return remaining[0]
+
+
 def _select_candidates(
     task_type: str,          # "reasoning" | "standard" | "fast"
     estimated_tokens: int,   # total input tokens

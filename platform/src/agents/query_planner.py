@@ -210,8 +210,9 @@ def plan(query: str, repo_id: Optional[str] = None) -> QueryPlan:
     the safe default plan so the pipeline is never blocked.
 
     Planner model selection:
-    - Primary: groq/llama-3.1-8b-instant  (fastest, purpose-built for classification)
-    - Fallback: gemini/gemini-2.5-flash-lite  (high quota, reliable)
+    - Primary:   groq/llama-3.1-8b-instant    (fastest, purpose-built for classification)
+    - Fallback1: gemini/gemini-2.5-flash-lite  (high quota, reliable)
+    - Fallback2: nvidia_nim fast tier          (no RPD cap, used when Groq+Gemini exhausted)
     - Never uses allam-2-7b (slow, unreliable for JSON classification tasks)
     """
     try:
@@ -232,14 +233,24 @@ def plan(query: str, repo_id: Optional[str] = None) -> QueryPlan:
             # Groq primary exhausted/unavailable — fall back to Gemini Flash-Lite.
             # Explicitly skip allam-2-7b (poor JSON compliance, very slow).
             # Skip other Groq models too — the planner needs reliable JSON output.
-            raw_response, _, _, _ = _llm.smart_complete(
-                query=query,
-                context=user_message,
-                system_prompt=_PLANNER_SYSTEM,
-                task_type="fast",
-                skip_providers={"openrouter", "cohere", "cloudflare", "cerebras"},
-                force_provider="gemini",
-            )
+            try:
+                raw_response, _, _, _ = _llm.smart_complete(
+                    query=query,
+                    context=user_message,
+                    system_prompt=_PLANNER_SYSTEM,
+                    task_type="fast",
+                    skip_providers={"openrouter", "cohere", "cloudflare", "cerebras"},
+                    force_provider="gemini",
+                )
+            except _llm.LLMProviderError:
+                # Gemini also exhausted — fall back to NVIDIA NIM (no RPD cap).
+                raw_response, _, _, _ = _llm.smart_complete(
+                    query=query,
+                    context=user_message,
+                    system_prompt=_PLANNER_SYSTEM,
+                    task_type="fast",
+                    force_provider="nvidia_nim",
+                )
 
         result = _parse_plan_response(raw_response, query)
         logger.debug(

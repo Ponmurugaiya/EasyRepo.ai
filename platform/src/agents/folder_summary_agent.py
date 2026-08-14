@@ -1,12 +1,16 @@
 """Folder Summary Agent.
 
 Aggregates file-level summaries for all files within a folder into a single
-3-5 sentence folder summary with inline citations.
+folder summary with inline citations.
+
+Two prompt modes controlled by ``intent``:
+  "repository_overview"  → SHORT prompt  (3-5 sentences)
+  "repository_detailed"  → DETAILED prompt (6-10 sentences)
 
 Public API
 ----------
-summarize_folder(folder, file_summaries) -> str
-    Returns the folder summary string.
+summarize_folder(folder, file_summaries, intent) -> tuple[str, int, int]
+    Returns (summary_text, prompt_tokens, completion_tokens).
 """
 
 from __future__ import annotations
@@ -15,16 +19,38 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """\
+# ---------------------------------------------------------------------------
+# Prompt constants
+# ---------------------------------------------------------------------------
+
+SHORT_SYSTEM_PROMPT = """\
 You are a code documentation assistant.
-Given summaries of individual source files within a folder, write a folder summary.
+Given summaries of individual source files within a folder, write a SHORT folder summary.
 The context header tells you exactly how many sentences to write — follow it precisely.
 
 The summary should describe:
 1. The folder's domain / responsibility (what it owns in the system)
 2. The most important files and what they each provide
-3. Key patterns across the folder (e.g. all files follow repository pattern, all expose REST routes, etc.)
-4. Cross-file dependencies visible from the summaries
+3. Key patterns across the folder (e.g. all files follow repository pattern, all expose REST routes)
+
+Rules:
+- Preserve inline citations ([file_path:start-end]) from the file summaries when you mention specific entities.
+- Write exactly the number of sentences specified in the context header — no more, no less.
+- Do NOT reproduce source code.
+- Do NOT use markdown headers — write flowing prose.
+"""
+
+DETAILED_SYSTEM_PROMPT = """\
+You are a code documentation assistant.
+Given summaries of individual source files within a folder, write a DETAILED folder summary.
+The context header tells you exactly how many sentences to write — follow it precisely.
+
+The summary should describe:
+1. The folder's domain / responsibility (what it owns in the system)
+2. Every file and what it provides, with preserved inline citations
+3. Cross-file interactions and data flow within the folder
+4. Key design patterns and architectural decisions visible across the folder
+5. External dependencies the folder introduces
 
 Rules:
 - Preserve inline citations ([file_path:start-end]) from the file summaries when you mention specific entities.
@@ -34,18 +60,30 @@ Rules:
 """
 
 
-def _build_context(folder: str, file_summaries: dict[str, str]) -> str:
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _build_context(folder: str, file_summaries: dict[str, str], intent: str) -> str:
     """Build the context sent to the LLM."""
-    # Scale the requested sentence count with folder size so larger folders
-    # get proportionally richer summaries (3 sentences for 1-3 files, up to 8
-    # for folders with 10+ files).
     n = len(file_summaries)
-    if n <= 3:
-        sentence_range = "3-4"
-    elif n <= 6:
-        sentence_range = "4-6"
+
+    if intent == "repository_detailed":
+        # Detailed mode: more sentences, scales more aggressively with folder size
+        if n <= 2:
+            sentence_range = "6-7"
+        elif n <= 5:
+            sentence_range = "7-8"
+        else:
+            sentence_range = "8-10"
     else:
-        sentence_range = "6-8"
+        # Short mode (overview): compact summaries
+        if n <= 3:
+            sentence_range = "3-4"
+        elif n <= 6:
+            sentence_range = "4-5"
+        else:
+            sentence_range = "5-6"
 
     parts = [f"Folder: {folder}  ({n} files — write {sentence_range} sentences)\n"]
     for file_path, summary in file_summaries.items():
@@ -53,7 +91,15 @@ def _build_context(folder: str, file_summaries: dict[str, str]) -> str:
     return "\n".join(parts)
 
 
-def summarize_folder(folder: str, file_summaries: dict[str, str]) -> str:
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def summarize_folder(
+    folder: str,
+    file_summaries: dict[str, str],
+    intent: str = "repository_overview",
+) -> "tuple[str, int, int]":
     """Aggregate file summaries into a folder-level summary.
 
     Parameters
@@ -62,6 +108,9 @@ def summarize_folder(folder: str, file_summaries: dict[str, str]) -> str:
         Folder path (e.g. "src/api", "src/storage", ".").
     file_summaries:
         dict mapping file_path → summary string for all files in this folder.
+    intent:
+        "repository_overview" → short prompt (3-5 sentences)
+        "repository_detailed" → detailed prompt (6-10 sentences)
 
     Returns
     -------
@@ -75,16 +124,21 @@ def summarize_folder(folder: str, file_summaries: dict[str, str]) -> str:
     try:
         import src.generation.llm_client as _llm
 
-        context = _build_context(folder, file_summaries)
+        system_prompt = (
+            DETAILED_SYSTEM_PROMPT
+            if intent == "repository_detailed"
+            else SHORT_SYSTEM_PROMPT
+        )
+        context = _build_context(folder, file_summaries, intent)
         query = f"Summarise the `{folder}` folder."
 
         # No force_model/force_provider — let the full cascade run.
-        # Same reasoning as file_summary_agent: avoids a concurrent RPM burst
-        # against a single provider when multiple folder agents run in parallel.
+        # Avoids concurrent RPM burst against a single provider when multiple
+        # folder agents run in parallel via asyncio.gather.
         summary, _, prompt_tokens, completion_tokens = _llm.smart_complete(
             query=query,
             context=context,
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             task_type="fast",
         )
         return summary.strip(), prompt_tokens, completion_tokens
