@@ -162,8 +162,11 @@ _NVIDIA_NIM = [
 
 # ─── Master ordered catalogue ─────────────────────────────────────────────────
 # Default cascade order: best-quality providers first within each tier.
-# The router filters this list based on task requirements before picking.
-ALL_MODEL_SPECS: list[ModelSpec] = _GROQ + _GEMINI + _OPENROUTER + _COHERE + _CLOUDFLARE + _CEREBRAS + _NVIDIA_NIM
+# NVIDIA NIM is placed before OpenRouter/Cohere/Cloudflare because it has
+# no RPD cap, 40 RPM, and responds in 2-5s — much faster than OpenRouter
+# free tier (30-80s). This ensures NIM is used for repo_summary when
+# Gemini/Groq are exhausted, keeping total pipeline latency under 30s.
+ALL_MODEL_SPECS: list[ModelSpec] = _GROQ + _GEMINI + _NVIDIA_NIM + _OPENROUTER + _COHERE + _CLOUDFLARE + _CEREBRAS
 
 # ─── Backwards-compat name lists (used by CLI + API routers) ─────────────────
 GROQ_MODELS: list[str]            = [m.model_id for m in _GROQ]
