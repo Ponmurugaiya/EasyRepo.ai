@@ -202,6 +202,7 @@ export const useChatStore = create<ChatState>()(
                         citations: response.citations,
                         context_entities: response.context_entities,
                         loading: false as const,
+                        is_overview: response.is_overview ?? false,
                       }
                     : m
                 ),

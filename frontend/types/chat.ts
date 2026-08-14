@@ -22,6 +22,8 @@ export interface AssistantMessage {
   citations: ValidationReport;
   context_entities: string[];
   loading?: false;
+  /** True when the answer came from the hierarchical overview pipeline. */
+  is_overview?: boolean;
 }
 
 export interface LoadingMessage {

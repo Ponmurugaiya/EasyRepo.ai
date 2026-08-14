@@ -12,6 +12,10 @@ import type { ResolvedCitation } from "../../lib/citations";
 import { useGraphStore } from "../../store/graph-store";
 import { ThinkingIndicator } from "./thinking-indicator";
 
+// Regex matching all inline [file:L-L] citation tokens the LLM may have left
+// in the answer text. Stripped for overview responses so the prose is clean.
+const INLINE_CITATION_RE = /\[([^\[\]\s:`]+\.[a-zA-Z0-9]+):(\d+)(?:-(\d+))?\]/g;
+
 interface ChatMessageProps {
   message: ChatMessageType;
   /** The repo id, needed to fetch entity source code */
@@ -37,13 +41,26 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
     !("loading" in message && message.loading === true) &&
     "citations" in message;
 
+  const isOverview =
+    isResolved && "is_overview" in message && message.is_overview === true;
+
   const { processedContent, citations: citationMap } = useMemo(() => {
     if (!isResolved || !("citations" in message) || !message.citations) {
       return { processedContent: message.content, citations: new Map() };
     }
+
+    // For overview responses: strip any residual inline citation tokens from
+    // the prose and return an empty map so no badges appear in the message body.
+    if (isOverview) {
+      return {
+        processedContent: message.content.replace(INLINE_CITATION_RE, "").trim(),
+        citations: new Map(),
+      };
+    }
+
     return buildCitationMap(message.content, message.citations);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isResolved, message.content, "citations" in message ? message.citations : null]);
+  }, [isResolved, isOverview, message.content, "citations" in message ? message.citations : null]);
 
   const handleCitationClick = (index: number, citation: ResolvedCitation) => {
     setActiveCitation({ index, citation });
@@ -109,10 +126,11 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
           ) : (
             <>
               <div className="rounded-2xl rounded-tl-sm bg-zinc-800/60 px-4 py-3">
+                {/* Overview responses: clean prose, no inline badges */}
                 <MarkdownContent
                   content={processedContent}
-                  citationMap={citationMap}
-                  onCitationClick={handleCitationClick}
+                  citationMap={isOverview ? undefined : citationMap}
+                  onCitationClick={isOverview ? undefined : handleCitationClick}
                 />
                 {/* Provider chip */}
                 {"provider" in message && message.provider && (
@@ -123,13 +141,14 @@ export function ChatMessage({ message, repoId }: ChatMessageProps) {
                   </div>
                 )}
               </div>
-              {/* Citations panel */}
+              {/* Citations panel — always shown when citations present */}
               {"citations" in message && message.citations && (
                 <CitationPanel
                   citations={message.citations}
                   citationMap={citationMap}
                   onCitationClick={handleCitationClick}
                   onShowInGraph={(entityId) => highlightEntity(entityId, repoId)}
+                  isOverview={isOverview}
                 />
               )}
             </>

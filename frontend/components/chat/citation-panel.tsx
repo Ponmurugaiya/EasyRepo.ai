@@ -14,6 +14,8 @@ interface CitationPanelProps {
   citationMap?: Map<number, ResolvedCitation>;
   /** Called when user clicks "Show in graph" for a verified citation */
   onShowInGraph?: (entityId: string) => void;
+  /** True when this is an overview response — changes the summary label */
+  isOverview?: boolean;
 }
 
 export function CitationPanel({
@@ -21,6 +23,7 @@ export function CitationPanel({
   onCitationClick,
   citationMap,
   onShowInGraph,
+  isOverview = false,
 }: CitationPanelProps) {
   const [open, setOpen] = useState(false);
 
@@ -69,7 +72,11 @@ export function CitationPanel({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span className="text-xs">{verifiedCount} verified</span>
+            <span className="text-xs">
+              {isOverview
+                ? `${verifiedCount} file${verifiedCount !== 1 ? "s" : ""} used`
+                : `${verifiedCount} verified`}
+            </span>
           </div>
           {hallCount > 0 && (
             <div className="flex items-center gap-1.5 text-amber-400">
@@ -77,7 +84,9 @@ export function CitationPanel({
               <span className="text-xs">{hallCount} unsupported</span>
             </div>
           )}
-          <span className="text-xs text-zinc-600">{hallPct}% hallucination rate</span>
+          {!isOverview && (
+            <span className="text-xs text-zinc-600">{hallPct}% hallucination rate</span>
+          )}
         </div>
         <ChevronDown
           className={cn(
