@@ -253,8 +253,19 @@ async def lifespan(app: FastAPI):
             if _result.returncode == 0:
                 logger.info("Alembic migrations applied: %s", _result.stdout.strip() or "already up to date")
             else:
-                logger.error("Alembic migration failed:\n%s\n%s", _result.stdout, _result.stderr)
-                raise RuntimeError(f"Alembic upgrade head failed: {_result.stderr[:500]}")
+                combined = (_result.stdout + _result.stderr).lower()
+                # "can't locate revision" means the DB is ahead of the code
+                # (migration applied manually but image not yet rebuilt).
+                # "already up to date" / "running upgrade" are normal.
+                # Treat these as non-fatal so the API can still serve traffic.
+                if "can't locate revision" in combined or "already up to date" in combined:
+                    logger.warning(
+                        "Alembic migration skipped (DB may be ahead of image): %s",
+                        _result.stderr.strip()[:300],
+                    )
+                else:
+                    logger.error("Alembic migration failed:\n%s\n%s", _result.stdout, _result.stderr)
+                    raise RuntimeError(f"Alembic upgrade head failed: {_result.stderr[:500]}")
         except Exception as mig_exc:
             # Non-fatal if already up to date or table already exists —
             # log and continue so the API doesn't hard-fail on benign errors.
@@ -311,6 +322,11 @@ async def lifespan(app: FastAPI):
             logger.warning("Worker did not stop within 30 s — forcing shutdown")
         except asyncio.CancelledError:
             logger.info("Worker stopped gracefully")
+        except Exception as shutdown_exc:
+            # Procrastinate raises AppNotOpen when the pool closes before the
+            # worker finishes its cleanup (prune_stalled_workers).  This is
+            # harmless — the pool is already being torn down by open_task_queue.
+            logger.warning("Worker shutdown raised (non-fatal): %s", shutdown_exc)
 
     logger.info("EasyRepo API shutdown complete")
 
