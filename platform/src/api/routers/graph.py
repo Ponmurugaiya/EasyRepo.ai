@@ -91,7 +91,25 @@ async def get_file_graph(
         )
 
     if show_all or resolved_root is None:
-        subgraph = get_full_graph(graph, exclude_orphans=not show_all)
+        # When show_all is explicitly requested, return the full graph.
+        # When there's no root, still respect depth by picking the highest-scored
+        # entry point we can find, or falling back to get_full_graph only if the
+        # graph truly has no entry points at all.
+        if show_all:
+            subgraph = get_full_graph(graph, exclude_orphans=not show_all)
+        else:
+            # No explicit root — try to traverse from the best available entry point
+            fallback_root = graph.root  # highest-scored entry point, or None
+            if fallback_root:
+                subgraph = traverse(
+                    graph=graph,
+                    root_id=fallback_root,
+                    max_depth=max(1, min(depth, 10)),
+                    include_imports=include_imports,
+                )
+            else:
+                # Truly no entry points — dump everything
+                subgraph = get_full_graph(graph, exclude_orphans=False)
     else:
         subgraph = traverse(
             graph=graph,

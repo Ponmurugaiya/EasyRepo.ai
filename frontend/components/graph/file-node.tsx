@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef, useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import { ChevronDown, ChevronRight, FileCode2 } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -65,6 +65,7 @@ const PREVIEW_LINES = 24;
 function FileNodeComponent({ id, data }: NodeProps<FileNodeData>) {
   const isExpanded = data.isExpanded;
   const codeRef = useRef<HTMLDivElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
 
   const safeEntities = data.entities ?? [];
   const sourceLines  = (data.source ?? "").split("\n");
@@ -103,11 +104,13 @@ function FileNodeComponent({ id, data }: NodeProps<FileNodeData>) {
 
   return (
     <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "rounded-lg border-2 shadow-xl bg-zinc-950 overflow-hidden flex flex-col",
         border,
         data.isHighlighted && "ring-2 ring-yellow-400/80 ring-offset-1 ring-offset-zinc-950",
-        data.isHovered && "shadow-2xl",
+        isHovered && "shadow-2xl",
       )}
       style={{ width: 320, minWidth: 320 }}
     >

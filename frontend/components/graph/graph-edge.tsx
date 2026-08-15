@@ -61,8 +61,10 @@ export function GraphEdge({
     targetPosition,
   });
 
-  const strokeWidth = data?.isHovered ? 2.5 : 1.5;
-  const opacity = data?.isHovered ? 1 : 0.7;
+  // Use local hover state — avoids triggering store updates (and React re-renders)
+  // on every mouse-enter/leave, which caused blinking during node drag.
+  const strokeWidth = tooltipVisible ? 2.5 : 1.5;
+  const opacity = tooltipVisible ? 1 : 0.7;
 
   return (
     <>
