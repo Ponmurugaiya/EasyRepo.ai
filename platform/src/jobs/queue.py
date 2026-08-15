@@ -45,6 +45,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
+import psycopg_pool
 import procrastinate
 
 from src.storage.db import get_session, make_psycopg_dsn
@@ -52,7 +53,14 @@ from src.storage.db import get_session, make_psycopg_dsn
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Application object — connector replaced at startup by open_task_queue().
+# Application object — the SAME connector instance must be used for the
+# entire lifetime of the process.  task_queue is created with a real
+# PsycopgConnector here; open_task_queue opens its pool at startup by
+# passing a pre-built AsyncConnectionPool via App.open_async(pool=...).
+#
+# IMPORTANT: never replace task_queue.connector after decoration — the
+# @task_queue.task decorator captures job_manager.connector at decoration
+# time, so swapping connector post-decoration breaks defer_async.
 # ---------------------------------------------------------------------------
 task_queue = procrastinate.App(
     connector=procrastinate.PsycopgConnector(),
@@ -61,24 +69,22 @@ task_queue = procrastinate.App(
 
 @asynccontextmanager
 async def open_task_queue(db_url: str):
-    """Async context manager that opens the Procrastinate connector.
+    """Async context manager that opens the Procrastinate connection pool.
 
-    Builds a new ``PsycopgConnector`` with the correct ``conninfo`` DSN
-    derived from *db_url* (SSL added for remote hosts), swaps it into
-    ``task_queue``, and opens the pool.
+    Builds a ``psycopg_pool.AsyncConnectionPool`` with the correct DSN and
+    pool settings, then passes it into ``task_queue.open_async(pool=pool)``
+    so the EXISTING connector (already captured by job_manager) gets its
+    ``_async_pool`` set — without replacing the connector object.
 
-    Usage in FastAPI lifespan::
-
-        async with open_task_queue(db_url):
-            await task_queue.schema_manager.apply_schema_async()
-            worker = asyncio.create_task(task_queue.run_worker_async(...))
-            yield
-            worker.cancel()
+    Pool settings tuned to survive Supabase's ~300s idle connection timeout:
+    - max_idle=240s  : recycle connections idle > 4 min
+    - max_lifetime=1800s : recycle connections older than 30 min
+    - min_size=1     : keep one warm connection at all times
+    - reconnect_timeout=60s : recover from transient failures
 
     Args:
-        db_url: SQLAlchemy-style ``DATABASE_URL`` (read from environment).
+        db_url: SQLAlchemy-style ``DATABASE_URL``.
     """
-    # psycopg v3 async requires SelectorEventLoop on Windows.
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -88,24 +94,23 @@ async def open_task_queue(db_url: str):
         "localhost" not in dsn and "127.0.0.1" not in dsn,
     )
 
-    # Replace the placeholder connector with one that has the real conninfo
-    # and a pool configured to survive Supabase's idle connection timeouts.
-    # Supabase pgbouncer drops idle connections after ~5 min (300s).
-    # - max_idle=240: recycle connections idle > 4 min (safely under 300s)
-    # - max_lifetime=1800: recycle connections older than 30 min
-    # - min_size=1: keep one warm connection so the pool never fully drains
-    # - reconnect_timeout=60: retry reconnection for up to 60s on failure
-    # PsycopgConnector passes **kwargs directly to AsyncConnectionPool.
-    task_queue.connector = procrastinate.PsycopgConnector(
+    # Build the pool manually so we control all settings.
+    pool = psycopg_pool.AsyncConnectionPool(
         conninfo=dsn,
+        open=False,               # we open it explicitly below
         min_size=1,
         max_size=5,
-        max_idle=240.0,
-        max_lifetime=1800.0,
-        reconnect_timeout=60.0,
+        max_idle=240.0,           # recycle before Supabase's 300s idle cutoff
+        max_lifetime=1800.0,      # recycle connections older than 30 min
+        reconnect_timeout=60.0,   # retry on transient failures
+        check=psycopg_pool.AsyncConnectionPool.check_connection,
     )
+    await pool.open(wait=True)
 
-    async with task_queue.open_async():
+    # Pass the open pool into the existing connector via open_async(pool=...).
+    # This sets connector._async_pool without touching connector identity,
+    # so job_manager.connector (captured at @task_queue.task decoration) works.
+    async with task_queue.open_async(pool=pool):
         yield
 
 
