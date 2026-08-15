@@ -6,6 +6,7 @@ import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
 import { useAuthStore } from "../../store/auth-store";
 import { RepoItem } from "./repo-item";
+import { ConversationItem } from "./conversation-item";
 import { DevLoginModal } from "../../components/auth/dev-login-modal";
 import { CognitoLoginModal } from "../../components/auth/cognito-login-modal";
 import { ChevronLeft, MessageSquare, GitBranch, LogIn, LogOut, User, SquarePen } from "lucide-react";
@@ -17,11 +18,13 @@ type SidebarTab = "chat" | "graph";
 export function Sidebar() {
   const {
     repoSessions,
-    conversations,
+    conversationList,
+    activeConversationId,
     activeRepoId,
     sidebarOpen,
     setSidebarOpen,
     setActiveRepo,
+    openConversation,
     startNewChat,
     syncRepoSessions,
   } = useChatStore();
@@ -50,6 +53,10 @@ export function Sidebar() {
 
   const repos = Object.values(repoSessions);
 
+  // Conversations sorted newest-first for the history list
+  const sortedConversations = Object.values(conversationList)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
   function handleTabChange(tab: SidebarTab) {
     setSelectedTab(tab);
     if (tab === "chat") {
@@ -66,14 +73,6 @@ export function Sidebar() {
         openGraph(activeRepoId);
       }
     }
-  }
-
-  function handleRepoClickInChat(repoId: string) {
-    closeGraph();
-    setGraphNoRepoHint(false);
-    setSelectedTab("chat");
-    setActiveRepo(repoId);
-    setSidebarOpen(false);
   }
 
   function handleRepoClickInGraph(repoId: string) {
@@ -183,49 +182,65 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* ── Repo list ── */}
+        {/* ── Content: conversation history (chat) or repo list (graph) ── */}
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-          {repos.length === 0 ? (
-            <div className="px-3 py-8 text-center text-xs text-zinc-500">
-              {graphNoRepoHint ? (
-                <>
-                  <GitBranch className="h-6 w-6 text-zinc-600 mx-auto mb-3" />
-                  <p className="text-zinc-300 font-medium mb-1">No repos yet</p>
-                  <p className="text-zinc-500">Add a GitHub repo first to explore its code graph.</p>
-                </>
-              ) : (
-                <>
-                  <p>No repos yet.</p>
-                  <p className="mt-1">Add a GitHub URL to get started.</p>
-                </>
-              )}
-            </div>
-          ) : (
-            repos.map((repo) => {
-              const conv = conversations[repo.repoId];
-              const messageCount =
-                conv?.messages.filter((m) => m.role === "user").length ?? 0;
-
-              const isActive =
-                activeTab === "chat"
-                  ? repo.repoId === activeRepoId && !graphOpen
-                  : repo.repoId === graphRepoId && graphOpen;
-
-              return (
-                <RepoItem
-                  key={repo.repoId}
-                  repo={repo}
-                  active={isActive}
-                  messageCount={activeTab === "chat" ? messageCount : 0}
-                  onClick={() =>
-                    activeTab === "chat"
-                      ? handleRepoClickInChat(repo.repoId)
-                      : handleRepoClickInGraph(repo.repoId)
-                  }
-                  showGraphHint={activeTab === "graph"}
+          {activeTab === "chat" ? (
+            /* ── Chat tab: conversation history ── */
+            sortedConversations.length === 0 ? (
+              <div className="px-3 py-8 text-center text-xs text-zinc-500">
+                <MessageSquare className="h-6 w-6 text-zinc-600 mx-auto mb-3" />
+                <p>No conversations yet.</p>
+                <p className="mt-1">Pick a repo to start chatting.</p>
+              </div>
+            ) : (
+              sortedConversations.map((conv) => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  active={conv.id === activeConversationId}
+                  onClick={() => {
+                    openConversation(conv.id);
+                    setSidebarOpen(false);
+                    closeGraph();
+                    setSelectedTab("chat");
+                  }}
                 />
-              );
-            })
+              ))
+            )
+          ) : (
+            /* ── Graph tab: repo list ── */
+            repos.length === 0 ? (
+              <div className="px-3 py-8 text-center text-xs text-zinc-500">
+                {graphNoRepoHint ? (
+                  <>
+                    <GitBranch className="h-6 w-6 text-zinc-600 mx-auto mb-3" />
+                    <p className="text-zinc-300 font-medium mb-1">No repos yet</p>
+                    <p className="text-zinc-500">Add a GitHub repo first to explore its code graph.</p>
+                  </>
+                ) : (
+                  <>
+                    <p>No repos yet.</p>
+                    <p className="mt-1">Add a GitHub URL to get started.</p>
+                  </>
+                )}
+              </div>
+            ) : (
+              repos.map((repo) => {
+                const isActive =
+                  repo.repoId === (graphRepoId ?? activeRepoId) && graphOpen;
+
+                return (
+                  <RepoItem
+                    key={repo.repoId}
+                    repo={repo}
+                    active={isActive}
+                    messageCount={0}
+                    onClick={() => handleRepoClickInGraph(repo.repoId)}
+                    showGraphHint
+                  />
+                );
+              })
+            )
           )}
         </div>
 

@@ -20,10 +20,15 @@ interface GraphEntityView {
 }
 
 export default function Home() {
-  const { activeRepoId, repoSessions, sidebarOpen, setSidebarOpen } = useChatStore();
+  const { activeRepoId, activeConversationId, repoSessions, sidebarOpen, setSidebarOpen } = useChatStore();
   const { isOpen: graphOpen, activeRepoId: graphRepoId, graphData } = useGraphStore();
 
-  const activeRepo = activeRepoId ? repoSessions[activeRepoId] : null;
+  // Derive active repo from either the active conversation or activeRepoId
+  const activeRepo = activeConversationId
+    ? repoSessions[activeRepoId ?? ""] ?? null
+    : activeRepoId
+    ? repoSessions[activeRepoId] ?? null
+    : null;
   const graphRepo  = graphRepoId  ? repoSessions[graphRepoId]  : null;
 
   const [graphEntityView, setGraphEntityView] = useState<GraphEntityView | null>(null);

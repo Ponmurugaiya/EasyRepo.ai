@@ -1,8 +1,13 @@
 ﻿// ─────────────────────────────────────────────────────────────────────────────
-// Chat store — manages conversations and repo sessions in memory
-// repoSessions and activeRepoId are persisted to localStorage so the sidebar
-// survives browser refresh without re-adding repos.
-// Conversations are NOT persisted (they reset on refresh — intentional).
+// Chat store — manages conversations and repo sessions
+//
+// Data model change: conversations are now keyed by conversationId (not
+// repoId) so multiple conversations per repo are supported. The sidebar
+// shows a history list with repo name + first user message as the title.
+//
+// Persisted to localStorage: repoSessions, conversationList, activeConversationId,
+// sidebarOpen. Conversations survive refresh and "New Chat" no longer
+// destroys old history.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
@@ -18,61 +23,68 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+/** Derive the display title for a conversation from its first user message. */
+export function conversationTitle(conv: Conversation): string {
+  const first = conv.messages.find((m) => m.role === "user");
+  if (!first) return "New conversation";
+  const text = first.content.trim();
+  return text.length > 60 ? text.slice(0, 57) + "…" : text;
+}
+
 interface ChatState {
-  // Active conversation IDs keyed by repoId
-  conversations: Record<string, Conversation>;
-  // Active repo id being chatted with
-  activeRepoId: string | null;
-  // Repos that have been added this session
+  // All conversations keyed by conversationId
+  conversationList: Record<string, Conversation>;
+  // Currently open conversation ID
+  activeConversationId: string | null;
+  // Repos that have been added
   repoSessions: Record<string, RepoSession>;
   // Whether the sidebar is open
   sidebarOpen: boolean;
-  // Set to true when "New Chat" is clicked — causes the next repo pick from
-  // the WelcomeScreen to always start a fresh conversation instead of
-  // resuming the existing one.
+  // Legacy field kept for WelcomeScreen repo picker
+  activeRepoId: string | null;
+  // Deprecated — kept for backwards compat with WelcomeScreen
   newChatMode: boolean;
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
   addRepoSession: (repo: RepositoryResponse) => void;
   updateRepoSession: (repoId: string, updates: Partial<RepoSession>) => void;
-  /** Set the active repo. Pass forceNew=true to always start a fresh conversation. */
+
+  /** Open an existing conversation or start a new one for the given repo. */
   setActiveRepo: (repoId: string | null, forceNew?: boolean) => void;
-  /** Called by the "New Chat" button — navigates to WelcomeScreen and flags
-   *  the next repo pick to start a fresh conversation. */
+  /** Open a specific conversation by ID. */
+  openConversation: (conversationId: string) => void;
+  /** Start a brand-new empty conversation for the given repo. */
+  startNewChatForRepo: (repoId: string) => string; // returns conversationId
+  /** "New Chat" button — deselects active conversation, shows WelcomeScreen. */
   startNewChat: () => void;
 
-  startConversation: (repoId: string) => string; // returns conversationId
+  // Internal helpers called by ChatWindow
+  startConversation: (repoId: string) => string;
   getConversation: (repoId: string) => Conversation | undefined;
-  addUserMessage: (repoId: string, content: string) => string; // returns msgId
+  getActiveConversation: () => Conversation | undefined;
+  addUserMessage: (repoId: string, content: string) => string;
   addLoadingMessage: (repoId: string) => string;
   resolveLoadingMessage: (
     repoId: string,
     loadingId: string,
     response: AskResponse
   ) => void;
-  setErrorMessage: (
-    repoId: string,
-    loadingId: string,
-    error: string
-  ) => void;
+  setErrorMessage: (repoId: string, loadingId: string, error: string) => void;
   clearConversation: (repoId: string) => void;
-  /** Remove a pending/loading message without leaving any error bubble. */
   removePendingMessage: (repoId: string, msgId: string) => void;
-  /** Replace the repo session list with the server's authoritative list.
-   *  Called after dev login to prune repos the user has no access to. */
   syncRepoSessions: (repos: RepositoryResponse[]) => void;
-  /** Restore conversation history from the server for a repo (authenticated users). */
   restoreHistory: (repoId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
-      conversations: {},
-      activeRepoId: null,
+      conversationList: {},
+      activeConversationId: null,
       repoSessions: {},
       sidebarOpen: true,
+      activeRepoId: null,
       newChatMode: false,
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -101,21 +113,48 @@ export const useChatStore = create<ChatState>()(
           },
         })),
 
+      // ── Conversation management ─────────────────────────────────────────
+
       setActiveRepo: (repoId, forceNew = false) => {
+        if (!repoId) {
+          set({ activeRepoId: null, activeConversationId: null, newChatMode: false });
+          return;
+        }
         set({ activeRepoId: repoId, newChatMode: false });
-        if (repoId && (forceNew || !get().conversations[repoId])) {
-          get().startConversation(repoId);
+
+        if (forceNew) {
+          // Start a fresh conversation — don't touch existing ones
+          get().startNewChatForRepo(repoId);
+          return;
+        }
+
+        // Find the most recent conversation for this repo
+        const existing = Object.values(get().conversationList)
+          .filter((c) => c.repoId === repoId)
+          .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+        if (existing) {
+          set({ activeConversationId: existing.id });
+        } else {
+          get().startNewChatForRepo(repoId);
         }
       },
 
-      startNewChat: () => {
-        set({ activeRepoId: null, newChatMode: true });
+      openConversation: (conversationId) => {
+        const conv = get().conversationList[conversationId];
+        if (!conv) return;
+        set({
+          activeConversationId: conversationId,
+          activeRepoId: conv.repoId,
+          newChatMode: false,
+        });
       },
 
-      startConversation: (repoId) => {
+      startNewChatForRepo: (repoId) => {
         const repo = get().repoSessions[repoId];
+        const convId = uid();
         const conv: Conversation = {
-          id: uid(),
+          id: convId,
           repoId,
           repoName: repo?.repoName ?? repoId,
           repoUrl: repo?.repoUrl ?? "",
@@ -124,12 +163,40 @@ export const useChatStore = create<ChatState>()(
           updatedAt: Date.now(),
         };
         set((state) => ({
-          conversations: { ...state.conversations, [repoId]: conv },
+          conversationList: { ...state.conversationList, [convId]: conv },
+          activeConversationId: convId,
+          activeRepoId: repoId,
         }));
-        return conv.id;
+        return convId;
       },
 
-      getConversation: (repoId) => get().conversations[repoId],
+      startNewChat: () => {
+        set({ activeRepoId: null, activeConversationId: null, newChatMode: true });
+      },
+
+      // ── Legacy helpers (ChatWindow uses repoId-based API) ──────────────
+      // These operate on the ACTIVE conversation for the given repoId.
+
+      startConversation: (repoId) => {
+        return get().startNewChatForRepo(repoId);
+      },
+
+      getConversation: (repoId) => {
+        const { activeConversationId, conversationList } = get();
+        if (activeConversationId) {
+          const active = conversationList[activeConversationId];
+          if (active && active.repoId === repoId) return active;
+        }
+        // Fallback: most recent conversation for this repo
+        return Object.values(conversationList)
+          .filter((c) => c.repoId === repoId)
+          .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      },
+
+      getActiveConversation: () => {
+        const { activeConversationId, conversationList } = get();
+        return activeConversationId ? conversationList[activeConversationId] : undefined;
+      },
 
       addUserMessage: (repoId, content) => {
         const msgId = uid();
@@ -139,20 +206,18 @@ export const useChatStore = create<ChatState>()(
           content,
           timestamp: Date.now(),
         };
-        set((state) => {
-          const conv = state.conversations[repoId];
-          if (!conv) return state;
-          return {
-            conversations: {
-              ...state.conversations,
-              [repoId]: {
-                ...conv,
-                messages: [...conv.messages, msg],
-                updatedAt: Date.now(),
-              },
+        const conv = get().getConversation(repoId);
+        if (!conv) return msgId;
+        set((state) => ({
+          conversationList: {
+            ...state.conversationList,
+            [conv.id]: {
+              ...conv,
+              messages: [...conv.messages, msg],
+              updatedAt: Date.now(),
             },
-          };
-        });
+          },
+        }));
         return msgId;
       },
 
@@ -165,115 +230,95 @@ export const useChatStore = create<ChatState>()(
           timestamp: Date.now(),
           loading: true,
         };
-        set((state) => {
-          const conv = state.conversations[repoId];
-          if (!conv) return state;
-          return {
-            conversations: {
-              ...state.conversations,
-              [repoId]: {
-                ...conv,
-                messages: [...conv.messages, msg],
-                updatedAt: Date.now(),
-              },
+        const conv = get().getConversation(repoId);
+        if (!conv) return msgId;
+        set((state) => ({
+          conversationList: {
+            ...state.conversationList,
+            [conv.id]: {
+              ...conv,
+              messages: [...conv.messages, msg],
+              updatedAt: Date.now(),
             },
-          };
-        });
+          },
+        }));
         return msgId;
       },
 
       resolveLoadingMessage: (repoId, loadingId, response) => {
-        set((state) => {
-          const conv = state.conversations[repoId];
-          if (!conv) return state;
-          return {
-            conversations: {
-              ...state.conversations,
-              [repoId]: {
-                ...conv,
-                messages: conv.messages.map((m) =>
-                  m.id === loadingId
-                    ? {
-                        id: loadingId,
-                        role: "assistant" as const,
-                        content: response.answer,
-                        timestamp: Date.now(),
-                        provider: response.provider,
-                        citations: response.citations,
-                        context_entities: response.context_entities,
-                        loading: false as const,
-                        is_overview: response.is_overview ?? false,
-                      }
-                    : m
-                ),
-                updatedAt: Date.now(),
-              },
-            },
-          };
-        });
-      },
-
-      setErrorMessage: (repoId, loadingId, error) => {
-        set((state) => {
-          const conv = state.conversations[repoId];
-          if (!conv) return state;
-          return {
-            conversations: {
-              ...state.conversations,
-              [repoId]: {
-                ...conv,
-                messages: conv.messages.map((m) =>
-                  m.id === loadingId
-                    ? {
-                        id: loadingId,
-                        role: "error" as const,
-                        content: error,
-                        timestamp: Date.now(),
-                      }
-                    : m
-                ),
-                updatedAt: Date.now(),
-              },
-            },
-          };
-        });
-      },
-
-      clearConversation: (repoId) => {
-        const repo = get().repoSessions[repoId];
-        const conv: Conversation = {
-          id: uid(),
-          repoId,
-          repoName: repo?.repoName ?? repoId,
-          repoUrl: repo?.repoUrl ?? "",
-          messages: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        const conv = get().getConversation(repoId);
+        if (!conv) return;
         set((state) => ({
-          conversations: { ...state.conversations, [repoId]: conv },
+          conversationList: {
+            ...state.conversationList,
+            [conv.id]: {
+              ...conv,
+              messages: conv.messages.map((m) =>
+                m.id === loadingId
+                  ? {
+                      id: loadingId,
+                      role: "assistant" as const,
+                      content: response.answer,
+                      timestamp: Date.now(),
+                      provider: response.provider,
+                      citations: response.citations,
+                      context_entities: response.context_entities,
+                      loading: false as const,
+                      is_overview: response.is_overview ?? false,
+                    }
+                  : m
+              ),
+              updatedAt: Date.now(),
+            },
+          },
         }));
       },
 
-      removePendingMessage: (repoId, msgId) => {
-        set((state) => {
-          const conv = state.conversations[repoId];
-          if (!conv) return state;
-          return {
-            conversations: {
-              ...state.conversations,
-              [repoId]: {
-                ...conv,
-                messages: conv.messages.filter((m) => m.id !== msgId),
-                updatedAt: Date.now(),
-              },
+      setErrorMessage: (repoId, loadingId, error) => {
+        const conv = get().getConversation(repoId);
+        if (!conv) return;
+        set((state) => ({
+          conversationList: {
+            ...state.conversationList,
+            [conv.id]: {
+              ...conv,
+              messages: conv.messages.map((m) =>
+                m.id === loadingId
+                  ? {
+                      id: loadingId,
+                      role: "error" as const,
+                      content: error,
+                      timestamp: Date.now(),
+                    }
+                  : m
+              ),
+              updatedAt: Date.now(),
             },
-          };
-        });
+          },
+        }));
+      },
+
+      clearConversation: (repoId) => {
+        // "Clear" starts a fresh conversation for the repo (doesn't delete history)
+        get().startNewChatForRepo(repoId);
+      },
+
+      removePendingMessage: (repoId, msgId) => {
+        const conv = get().getConversation(repoId);
+        if (!conv) return;
+        set((state) => ({
+          conversationList: {
+            ...state.conversationList,
+            [conv.id]: {
+              ...conv,
+              messages: conv.messages.filter((m) => m.id !== msgId),
+              updatedAt: Date.now(),
+            },
+          },
+        }));
       },
 
       syncRepoSessions: (repos) => {
-        // Build new session map from server response
         const newSessions: Record<string, RepoSession> = {};
         for (const repo of repos) {
           newSessions[repo.repo_id] = {
@@ -286,20 +331,25 @@ export const useChatStore = create<ChatState>()(
             indexedAt: repo.indexed_at,
           };
         }
-        // Prune active repo and conversations for repos no longer accessible
         const accessibleIds = new Set(Object.keys(newSessions));
         set((state) => {
           const prunedConversations = Object.fromEntries(
-            Object.entries(state.conversations).filter(([id]) => accessibleIds.has(id))
+            Object.entries(state.conversationList).filter(([, conv]) =>
+              accessibleIds.has(conv.repoId)
+            )
           );
           const nextActiveId =
-            state.activeRepoId && accessibleIds.has(state.activeRepoId)
-              ? state.activeRepoId
+            state.activeConversationId &&
+            prunedConversations[state.activeConversationId]
+              ? state.activeConversationId
               : null;
           return {
             repoSessions: newSessions,
-            conversations: prunedConversations,
-            activeRepoId: nextActiveId,
+            conversationList: prunedConversations,
+            activeConversationId: nextActiveId,
+            activeRepoId: nextActiveId
+              ? prunedConversations[nextActiveId]?.repoId ?? null
+              : null,
           };
         });
       },
@@ -307,79 +357,80 @@ export const useChatStore = create<ChatState>()(
       restoreHistory: async (repoId) => {
         try {
           const { listConversations } = await import("../lib/api");
-          const serverConvs = await listConversations(repoId, 1); // most recent only
+          const serverConvs = await listConversations(repoId, 5);
           if (!serverConvs.length) return;
 
-          const serverConv = serverConvs[0];
-          if (!serverConv.turns.length) return;
+          const repo = get().repoSessions[repoId];
 
-          // Only restore if we don't already have local messages for this repo
-          const existing = get().conversations[repoId];
-          if (existing?.messages.length) return;
+          // Import server conversations that aren't already in local state
+          const existing = new Set(
+            Object.values(get().conversationList)
+              .filter((c) => c.repoId === repoId)
+              .map((c) => c.id)
+          );
 
-          // Rebuild messages from server turns
-          const messages: ChatMessage[] = serverConv.turns.map((t) => {
-            if (t.role === "user") {
+          const toAdd: Record<string, Conversation> = {};
+          for (const serverConv of serverConvs) {
+            if (existing.has(serverConv.conversation_id)) continue;
+            if (!serverConv.turns.length) continue;
+
+            const messages: ChatMessage[] = serverConv.turns.map((t) => {
+              if (t.role === "user") {
+                return {
+                  id: uid(),
+                  role: "user" as const,
+                  content: t.content,
+                  timestamp: new Date(t.created_at).getTime(),
+                };
+              }
               return {
                 id: uid(),
-                role: "user" as const,
+                role: "assistant" as const,
                 content: t.content,
                 timestamp: new Date(t.created_at).getTime(),
+                provider: "restored",
+                citations: {
+                  total_citations: 0,
+                  definition_citations: [],
+                  call_site_citations: [],
+                  unsupported_citations: [],
+                  hallucination_rate: 0,
+                },
+                context_entities: [],
+                loading: false as const,
               };
-            }
-            return {
-              id: uid(),
-              role: "assistant" as const,
-              content: t.content,
-              timestamp: new Date(t.created_at).getTime(),
-              provider: "restored",
-              citations: {
-                total_citations: 0,
-                definition_citations: [],
-                call_site_citations: [],
-                unsupported_citations: [],
-                hallucination_rate: 0,
-              },
-              context_entities: [],
-              loading: false as const,
+            });
+
+            toAdd[serverConv.conversation_id] = {
+              id: serverConv.conversation_id,
+              repoId,
+              repoName: repo?.repoName ?? repoId,
+              repoUrl: repo?.repoUrl ?? "",
+              messages,
+              createdAt: new Date(serverConv.created_at).getTime(),
+              updatedAt: new Date(serverConv.updated_at).getTime(),
             };
-          });
+          }
 
-          const repo = get().repoSessions[repoId];
-          const restoredConv: Conversation = {
-            id: serverConv.conversation_id,
-            repoId,
-            repoName: repo?.repoName ?? repoId,
-            repoUrl: repo?.repoUrl ?? "",
-            messages,
-            createdAt: new Date(serverConv.created_at).getTime(),
-            updatedAt: new Date(serverConv.updated_at).getTime(),
-          };
-
-          set((state) => ({
-            conversations: {
-              ...state.conversations,
-              [repoId]: restoredConv,
-            },
-          }));
+          if (Object.keys(toAdd).length) {
+            set((state) => ({
+              conversationList: { ...state.conversationList, ...toAdd },
+            }));
+          }
         } catch {
-          // Non-fatal — silent failure, user just won't see history
+          // Non-fatal
         }
       },
     }),
     {
-      name: "easyrepo-chat-store",          // localStorage key
+      name: "easyrepo-chat-store-v2",   // new key — avoids stale shape from v1
       storage: createJSONStorage(() => localStorage),
-      // Persist repo sessions, active repo, sidebar state, AND conversations.
-      // For anonymous users the conversations are cleared on explicit "New chat"
-      // but survive accidental refresh (intentional UX improvement).
-      // For dev-login users the backend DB is the authoritative store; the
-      // localStorage copy is just a display buffer that survives refresh.
       partialize: (state) => ({
         repoSessions: state.repoSessions,
         activeRepoId: state.activeRepoId,
+        activeConversationId: state.activeConversationId,
+        conversationList: state.conversationList,
         sidebarOpen: state.sidebarOpen,
-        conversations: state.conversations,
       }),
     }
   )

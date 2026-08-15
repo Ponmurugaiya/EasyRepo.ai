@@ -24,7 +24,7 @@ interface ChatWindowProps {
 
 export function ChatWindow({ repo }: ChatWindowProps) {
   const {
-    conversations,
+    getConversation,
     addUserMessage,
     addLoadingMessage,
     resolveLoadingMessage,
@@ -35,7 +35,7 @@ export function ChatWindow({ repo }: ChatWindowProps) {
 
   const { isLoggedIn } = useAuthStore();
 
-  const conversation = conversations[repo.repoId];
+  const conversation = getConversation(repo.repoId);
   const messages = conversation?.messages ?? [];
   const isLoading = messages.some(
     (m) => m.role === "assistant" && "loading" in m && (m as { loading?: boolean }).loading === true
