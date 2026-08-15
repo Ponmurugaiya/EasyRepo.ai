@@ -61,12 +61,6 @@ task_queue = procrastinate.App(
 
 @asynccontextmanager
 async def open_task_queue(db_url: str):
-    """Async context manager that opens the Procrastinate connector."""
-    # psycopg v3 async requires SelectorEventLoop on Windows.
-    # Set it here so the connector's connection pool uses the right loop
-    # regardless of how the server was started.
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     """Async context manager that opens the Procrastinate connector.
 
     Builds a new ``PsycopgConnector`` with the correct ``conninfo`` DSN
@@ -84,16 +78,32 @@ async def open_task_queue(db_url: str):
     Args:
         db_url: SQLAlchemy-style ``DATABASE_URL`` (read from environment).
     """
+    # psycopg v3 async requires SelectorEventLoop on Windows.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     dsn = make_psycopg_dsn(db_url)
     logger.info(
         "Procrastinate: opening connector (remote=%s)",
         "localhost" not in dsn and "127.0.0.1" not in dsn,
     )
 
-    # Replace the placeholder connector with one that has the real conninfo.
-    # PsycopgConnector forwards **kwargs to AsyncConnectionPool, whose first
-    # kwarg is `conninfo`.
-    task_queue.connector = procrastinate.PsycopgConnector(conninfo=dsn)
+    # Replace the placeholder connector with one that has the real conninfo
+    # and a pool configured to survive Supabase's idle connection timeouts.
+    # Supabase pgbouncer drops idle connections after ~5 min (300s).
+    # - max_idle=240: recycle connections idle > 4 min (safely under 300s)
+    # - max_lifetime=1800: recycle connections older than 30 min
+    # - min_size=1: keep one warm connection so the pool never fully drains
+    # - reconnect_timeout=60: retry reconnection for up to 60s on failure
+    # PsycopgConnector passes **kwargs directly to AsyncConnectionPool.
+    task_queue.connector = procrastinate.PsycopgConnector(
+        conninfo=dsn,
+        min_size=1,
+        max_size=5,
+        max_idle=240.0,
+        max_lifetime=1800.0,
+        reconnect_timeout=60.0,
+    )
 
     async with task_queue.open_async():
         yield
