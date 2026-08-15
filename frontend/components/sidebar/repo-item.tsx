@@ -65,10 +65,10 @@ export function RepoItem({
           });
           break;
         }
-        // Still indexing — update progress message for live status display
+        // Still indexing — update both status and progress message for live display
         updateRepoSession(repo.repoId, {
           status: s.status,
-          progressMessage: s.progress_message,
+          progressMessage: s.progress_message ?? null,
         });
       }
     } catch {
@@ -146,11 +146,9 @@ export function RepoItem({
           ) : null}
 
           {reindexing && (() => {
-            const msg = repo.progressMessage
-              ? repo.progressMessage.replace(/\|pct=\d+/, "").trim()
-              : "";
+            const msg = repo.progressMessage?.trim() ?? "";
             const isWaiting = msg.includes("Too many requests");
-            const displayMsg = msg && !msg.startsWith("|") ? msg : "Re-indexing…";
+            const displayMsg = msg || "Re-indexing…";
             return (
               <p className={`mt-0.5 text-[10px] animate-pulse ${isWaiting ? "text-amber-400" : "text-blue-400"}`}>
                 {displayMsg}

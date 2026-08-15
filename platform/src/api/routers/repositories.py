@@ -315,10 +315,13 @@ async def get_repository_status(
     """Return the ingestion status of a repository the caller has access to."""
     repo = get_accessible_repository(repo_id, db, current_user)
     lang_warning = _extract_language_warning(repo.progress_message)
-    # Strip the |warn= suffix from the progress message before returning it
+    # Strip the |warn= and |pct= suffixes from the progress message before returning it
     progress_msg = repo.progress_message
     if lang_warning and progress_msg:
         progress_msg = progress_msg[: progress_msg.find("|warn=")]  or None
+    # Strip |pct= suffix (used internally for progress percentage encoding)
+    if progress_msg and "|pct=" in progress_msg:
+        progress_msg = progress_msg[: progress_msg.find("|pct=")].strip() or None
     return RepositoryStatusResponse(
         repo_id=repo.id,
         name=repo.name,
