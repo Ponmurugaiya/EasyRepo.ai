@@ -38,7 +38,6 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
     expandedFiles, toggleExpand,
     highlightedEntityId, highlightedFileId,
     selectedRoot, depth, includeImports,
-    setHoveredNode, setHoveredEdge,
     setRoot, setDepth, setIncludeImports,
     refreshGraph, openGraph,
     expandAll, collapseAll,
@@ -46,6 +45,14 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  // Local state for the depth input — avoids firing an API call on every keystroke.
+  // We commit to the store (which triggers a refresh) only after the user stops typing.
+  const [depthInput, setDepthInput] = useState<string>(String(depth));
+  const depthDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep local input in sync if the store depth changes externally
+  useEffect(() => { setDepthInput(String(depth)); }, [depth]);
 
   // Handle node/edge changes (drag, select).
   // We intentionally SKIP "dimensions" changes — those come from React Flow
@@ -210,8 +217,14 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
 
         <label className="flex items-center gap-1 text-xs text-zinc-400">
           Depth
-          <input type="number" min={1} max={10} value={depth}
-            onChange={(e) => setDepth(Number(e.target.value))}
+          <input type="number" min={1} max={10} value={depthInput}
+            onChange={(e) => {
+              setDepthInput(e.target.value);
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n) || n < 1) return;
+              if (depthDebounceRef.current) clearTimeout(depthDebounceRef.current);
+              depthDebounceRef.current = setTimeout(() => setDepth(Math.min(10, Math.max(1, n))), 600);
+            }}
             className="w-9 bg-zinc-800 text-zinc-300 border border-zinc-700 rounded
                        px-1.5 py-0.5 text-xs focus:outline-none focus:border-zinc-500"
           />
@@ -286,10 +299,6 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
           onInit={(instance: ReactFlowInstance) => {
             fitViewRef.current = () => instance.fitView({ padding: 0.15 });
           }}
-          onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
-          onNodeMouseLeave={() => setHoveredNode(null)}
-          onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
-          onEdgeMouseLeave={() => setHoveredEdge(null)}
           minZoom={0.15}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
