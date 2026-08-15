@@ -56,7 +56,7 @@ _JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
 # Paid tier:  top up via Stripe → 500 RPM, 2M TPM
 #             set JINA_RPM_LIMIT=500
 _RPM_LIMIT = int(os.environ.get("JINA_RPM_LIMIT", "100"))
-_MAX_TOKENS_PER_REQUEST = int(os.environ.get("JINA_MAX_TOKENS_REQUEST", "8000"))
+_MAX_TOKENS_PER_REQUEST = int(os.environ.get("JINA_MAX_TOKENS_REQUEST", "50000"))
 
 # Retry config — Jina returns 429 with a Retry-After header; use short backoff
 _MAX_RETRIES = 6

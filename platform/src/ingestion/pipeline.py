@@ -315,9 +315,17 @@ def ingest_repository(
         embedder = CodeEmbedder()
         texts = [format_entity_for_embedding(e) for e in extracted_ents]
 
+        _last_progress_time: list[float] = [0.0]  # mutable cell for closure
+
         def _on_embed_progress(done: int, total: int) -> None:
-            embed_pct = 35 + int((done / total) * 55)
-            progress(f"Embedding {done}/{total} entities…", pct=embed_pct)
+            now = time.perf_counter()
+            # Throttle DB writes to at most once every 1.5s so the frontend
+            # poll (every 2s) always catches a fresh value, without hammering
+            # the DB on large batches that complete quickly.
+            if done == total or now - _last_progress_time[0] >= 1.5:
+                embed_pct = 35 + int((done / total) * 55)
+                progress(f"Embedding {done}/{total} entities…", pct=embed_pct)
+                _last_progress_time[0] = now
 
         def _on_embed_wait(seconds: float) -> None:
             wait_secs = int(seconds) + 1  # round up so the UI never shows 0

@@ -18,7 +18,7 @@ Batching and rate limiting are handled in embedder.py via a sliding-window
 limiter. Configure via env vars:
 
   JINA_RPM_LIMIT           requests per minute  (default: 100 — free tier)
-  JINA_MAX_TOKENS_REQUEST  tokens per request   (default: 8000)
+  JINA_MAX_TOKENS_REQUEST  tokens per request   (default: 50000)
   JINA_RETRY_BASE_DELAY    backoff base secs    (default: 2)
 
 Free tier:   100 RPM, 100K TPM (10M tokens on signup, no payment required)
