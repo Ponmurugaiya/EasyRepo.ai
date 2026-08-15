@@ -328,7 +328,6 @@ def ingest_repository(
 
         all_embeddings = embedder.embed_batch(
             texts,
-            batch_size=batch_size,
             on_progress=_on_embed_progress,
             on_wait=_on_embed_wait,
         )
