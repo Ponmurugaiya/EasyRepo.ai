@@ -42,6 +42,7 @@ class RepositoryResponse(BaseModel):
     entity_count: Optional[int] = 0
     relationship_count: Optional[int] = 0
     indexed_at: Optional[str] = None
+    language_warning: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -59,6 +60,7 @@ class RepositoryStatusResponse(BaseModel):
     status: str
     indexed_at: Optional[str] = None
     progress_message: Optional[str] = None
+    language_warning: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

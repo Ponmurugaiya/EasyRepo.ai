@@ -32,6 +32,21 @@ _RATE_INGEST  = os.environ.get("RATE_LIMIT_INGEST",  "10/minute")
 _RATE_DEFAULT = os.environ.get("RATE_LIMIT_DEFAULT", "60/minute")
 
 
+def _extract_language_warning(progress_message: Optional[str]) -> Optional[str]:
+    """Extract the ``|warn=<text>`` suffix stored by the ingestion pipeline.
+
+    Returns the warning text, or ``None`` if no warning was encoded.
+    The caller should strip this suffix from *progress_message* before
+    displaying it to users.
+    """
+    if not progress_message:
+        return None
+    idx = progress_message.find("|warn=")
+    if idx == -1:
+        return None
+    return progress_message[idx + 6:] or None
+
+
 # ---------------------------------------------------------------------------
 # Local schemas
 # ---------------------------------------------------------------------------
@@ -276,6 +291,7 @@ async def get_repository_endpoint(
     relationship_count = (
         db.query(func.count(RelationshipModel.id)).filter_by(repo_id=repo_id).scalar()
     )
+    lang_warning = _extract_language_warning(repo.progress_message)
     return RepositoryResponse(
         repo_id=repo.id,
         name=repo.name,
@@ -284,6 +300,7 @@ async def get_repository_endpoint(
         entity_count=entity_count,
         relationship_count=relationship_count,
         indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
+        language_warning=lang_warning,
     )
 
 
@@ -297,11 +314,18 @@ async def get_repository_status(
 ) -> RepositoryStatusResponse:
     """Return the ingestion status of a repository the caller has access to."""
     repo = get_accessible_repository(repo_id, db, current_user)
+    lang_warning = _extract_language_warning(repo.progress_message)
+    # Strip the |warn= suffix from the progress message before returning it
+    progress_msg = repo.progress_message
+    if lang_warning and progress_msg:
+        progress_msg = progress_msg[: progress_msg.find("|warn=")]  or None
     return RepositoryStatusResponse(
         repo_id=repo.id,
         name=repo.name,
         status=repo.status,
         indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
+        progress_message=progress_msg or None,
+        language_warning=lang_warning,
     )
 
 

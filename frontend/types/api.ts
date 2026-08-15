@@ -12,6 +12,7 @@ export interface RepositoryResponse {
   entity_count: number;
   relationship_count: number;
   indexed_at: string | null;
+  language_warning: string | null;
 }
 
 export interface RepositoryStatusResponse {
@@ -20,6 +21,7 @@ export interface RepositoryStatusResponse {
   status: RepoStatus;
   indexed_at: string | null;
   progress_message: string | null;
+  language_warning: string | null;
 }
 
 export interface CitationMatch {

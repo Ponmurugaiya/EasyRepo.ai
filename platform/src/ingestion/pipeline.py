@@ -55,9 +55,71 @@ logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r'^(https?://|git@|git://)', re.IGNORECASE)
 
+# Extensions that the adapter registry supports (Python + TypeScript).
+# Used to detect mixed-language repos and provide user-facing warnings.
+_SUPPORTED_EXTENSIONS = frozenset([".py", ".ts", ".tsx"])
+
+# Common file extensions we can meaningfully name in warnings.
+_KNOWN_LANG_EXTENSIONS: dict[str, str] = {
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".java": "Java",
+    ".rb": "Ruby",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".cxx": "C++",
+    ".c": "C",
+    ".cs": "C#",
+    ".php": "PHP",
+    ".swift": "Swift",
+    ".kt": "Kotlin",
+    ".scala": "Scala",
+    ".r": "R",
+    ".m": "MATLAB/Objective-C",
+    ".lua": "Lua",
+    ".ex": "Elixir",
+    ".exs": "Elixir",
+    ".hs": "Haskell",
+    ".ml": "OCaml",
+    ".clj": "Clojure",
+    ".dart": "Dart",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+}
+
+_SKIP_DIRS = frozenset(["node_modules", "venv", "__pycache__", ".git", ".venv", "dist", "build"])
+
 
 def _is_url(source: str) -> bool:
     return bool(_URL_RE.match(source.strip()))
+
+
+def _scan_languages(repo_path: Path) -> tuple[bool, list[str]]:
+    """Walk *repo_path* and check which languages are present.
+
+    Returns:
+        has_supported: True if at least one Python/TypeScript file exists.
+        unsupported_names: Sorted, deduplicated list of human-readable names
+            for languages that are present but not yet supported.
+    """
+    has_supported = False
+    unsupported_exts: set[str] = set()
+
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
+        for filename in files:
+            ext = Path(filename).suffix.lower()
+            if ext in _SUPPORTED_EXTENSIONS:
+                has_supported = True
+            elif ext in _KNOWN_LANG_EXTENSIONS:
+                unsupported_exts.add(ext)
+
+    unsupported_names = sorted(
+        {_KNOWN_LANG_EXTENSIONS[e] for e in unsupported_exts}
+    )
+    return has_supported, unsupported_names
 
 
 def _friendly_ingest_error(exc: Exception) -> str:
@@ -78,6 +140,8 @@ def _friendly_ingest_error(exc: Exception) -> str:
         return "Indexing timed out. The repository may be too large — try again."
     if "voyage embed failed after max retries" in msg:
         return "Indexing failed — Voyage AI embedding retries exhausted. Try again in a few minutes."
+    if "no python or typescript files" in msg:
+        return str(exc)  # already a clean user-facing message
 
     return "Indexing failed. Try re-indexing the repository."
 
@@ -197,6 +261,30 @@ def ingest_repository(
                 )
             progress("Reading local repository…", pct=5)
 
+        # ── Stage 1b: language scan ───────────────────────────────────────────
+        # Detect what languages exist in the repo before doing any heavy work.
+        # - No Python/TS files at all → fail immediately with a clear message.
+        # - Python/TS present alongside unsupported languages → proceed but
+        #   record a warning so the frontend can inform the user.
+        has_supported, unsupported_lang_names = _scan_languages(repo_path)
+        if not has_supported:
+            other = ", ".join(unsupported_lang_names) if unsupported_lang_names else "other languages"
+            raise RuntimeError(
+                f"No Python or TypeScript files found in this repository. "
+                f"We detected {other} — we're still working on support for these languages. "
+                f"Try a repo that contains Python (.py) or TypeScript (.ts/.tsx) files."
+            )
+
+        # Build the warning string now so we can attach it at the end.
+        lang_warning: Optional[str] = None
+        if unsupported_lang_names:
+            names = ", ".join(unsupported_lang_names)
+            lang_warning = (
+                f"We only indexed the Python and TypeScript files in this repo. "
+                f"Support for {names} is still in development — "
+                f"but you can explore the Python and TypeScript parts right now."
+            )
+
         # ── Stage 2: entity extraction ────────────────────────────────────────
         t1 = time.perf_counter()
         progress("Parsing source files…", pct=10)
@@ -309,7 +397,9 @@ def ingest_repository(
         # ── Done ──────────────────────────────────────────────────────────────
         repo.status = "ready"
         repo.indexed_at = datetime.now(timezone.utc)
-        repo.progress_message = None
+        # Store the language warning (if any) as a suffix so the frontend can
+        # surface it without a schema change. The frontend strips it before display.
+        repo.progress_message = f"|warn={lang_warning}" if lang_warning else None
         db_session.commit()
 
         total = time.perf_counter() - t0

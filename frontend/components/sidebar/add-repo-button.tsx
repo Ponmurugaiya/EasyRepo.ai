@@ -16,7 +16,7 @@ import { Label } from "../../components/ui/label";
 import { Spinner } from "../../components/ui/spinner";
 import {
   Plus, GitBranch, CheckCircle2, XCircle,
-  Download, FileSearch, GitMerge, Cpu, Database, Check, Loader2,
+  Download, FileSearch, GitMerge, Cpu, Database, Check, Loader2, AlertTriangle,
 } from "lucide-react";
 import { ingestRepository, getRepositoryStatus } from "../../lib/api";
 import { useChatStore } from "../../store/chat-store";
@@ -124,6 +124,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
   const [entityCount, setEntityCount] = useState<number | null>(null);
   const [relCount, setRelCount] = useState<number | null>(null);
   const [addedRepoId, setAddedRepoId] = useState<string | null>(null);
+  const [languageWarning, setLanguageWarning] = useState<string | null>(null);
 
   const abortRef = useRef(false);
   const startTimeRef = useRef<number>(0);
@@ -155,6 +156,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
     setElapsedSec(0);
     setEntityCount(null);
     setRelCount(null);
+    setLanguageWarning(null);
     setStep("ingesting");
     setErrorMsg("");
     setProgressMessage("Submitting repository…");
@@ -168,6 +170,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
         setStatus("ready");
         setEntityCount(repo.entity_count);
         setRelCount(repo.relationship_count);
+        if (repo.language_warning) setLanguageWarning(repo.language_warning);
         setStep("done");
         return;
       }
@@ -187,6 +190,10 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
         // keep the last known message so we never go back to "Queued"
         if (statusResp.progress_message) {
           setProgressMessage(statusResp.progress_message);
+        }
+        // Capture language warning as soon as the backend sends it
+        if (statusResp.language_warning) {
+          setLanguageWarning(statusResp.language_warning);
         }
         updateRepoSession(repo.repo_id, {
           status: statusResp.status,
@@ -223,6 +230,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
           });
           setEntityCount(full.entity_count);
           setRelCount(full.relationship_count);
+          if (full.language_warning) setLanguageWarning(full.language_warning);
           setStep("done");
           return;
         }
@@ -250,6 +258,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
         setErrorMsg("");
         setProgressMessage("");
         setAddedRepoId(null);
+        setLanguageWarning(null);
         startTimeRef.current = 0;
       }
     }
@@ -263,6 +272,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
     setSource("");
     setProgressMessage("");
     setAddedRepoId(null);
+    setLanguageWarning(null);
     startTimeRef.current = 0;
   }
 
@@ -538,6 +548,15 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
                 </div>
               )}
             </div>
+            {/* Language warning banner */}
+            {languageWarning && (
+              <div className="w-full rounded-lg bg-amber-950/40 border border-amber-700/50 px-3.5 py-3 flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                <p className="text-xs text-amber-300 leading-relaxed">
+                  {languageWarning}
+                </p>
+              </div>
+            )}
             <Button
               onClick={handleDone}
               className="bg-blue-600 hover:bg-blue-500 text-white"

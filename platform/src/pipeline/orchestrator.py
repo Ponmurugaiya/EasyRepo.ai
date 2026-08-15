@@ -449,7 +449,14 @@ async def run_pipeline(
         trace.step_ltm(hit=False)
 
     # ── 6. Answer Agent loop ─────────────────────────────────────────────────
-    system_prompt = build_system_prompt()
+    # Extract language coverage note from repo metadata (set during ingestion
+    # when the repo contains files in unsupported languages alongside Python/TS).
+    _lang_note: str | None = None
+    if repo.progress_message and "|warn=" in repo.progress_message:
+        _warn_idx = repo.progress_message.find("|warn=")
+        _lang_note = repo.progress_message[_warn_idx + 6:] or None
+
+    system_prompt = build_system_prompt(repo_language_note=_lang_note)
 
     from src.agents import code_qa_agent
     from src.retrieval.targeted_retrieval import fetch as targeted_fetch
