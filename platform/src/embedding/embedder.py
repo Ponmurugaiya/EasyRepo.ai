@@ -21,7 +21,7 @@ import logging
 import os
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 import voyageai
 
@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 # Number of retries on rate-limit (429) responses
 _MAX_RETRIES = 5
-_RETRY_BASE_DELAY = 22.0  # seconds — 3 RPM = 1 req/20s, start at 22s to be safe
+# Base retry delay. On paid plans (300 RPM) a 5s backoff is plenty;
+# free-tier users will hit 429s and back off further via exponential doubling.
+_RETRY_BASE_DELAY = float(os.environ.get("VOYAGE_RETRY_BASE_DELAY", "5.0"))
 
 
 def extract_docstring(source: str, has_docstring: bool) -> str:
@@ -118,20 +120,28 @@ class CodeEmbedder:
         texts: list[str],
         batch_size: int = BATCH_SIZE,
         input_type: str = INPUT_TYPE,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> list[list[float]]:
         """Embed a list of texts in batches, returning one vector per text.
 
         Handles rate limiting with exponential backoff and splits large
         lists into API-sized chunks automatically.
+
+        Args:
+            texts: Texts to embed.
+            batch_size: Number of texts per API call (max 128).
+            input_type: "document" for indexing, "query" for search.
+            on_progress: Optional callback(done, total) called after each batch.
         """
         if not texts:
             return []
 
         all_embeddings: list[list[float]] = []
         total = len(texts)
-        # Inter-batch delay to respect free-tier rate limits (3 RPM = 1 req/20s).
-        # Override with VOYAGE_BATCH_DELAY_SECS env var (set 0 once payment added).
-        inter_batch_delay = float(os.environ.get("VOYAGE_BATCH_DELAY_SECS", "21.0"))
+        # Inter-batch delay for free-tier rate limits (3 RPM = 1 req/20s).
+        # Defaults to 0 (no delay) for paid plans.
+        # Set VOYAGE_BATCH_DELAY_SECS=21 for the free tier.
+        inter_batch_delay = float(os.environ.get("VOYAGE_BATCH_DELAY_SECS", "0"))
 
         for i, start in enumerate(range(0, total, batch_size)):
             chunk = texts[start : start + batch_size]
@@ -149,6 +159,8 @@ class CodeEmbedder:
                 time.sleep(inter_batch_delay)
             embeddings = self._embed_with_retry(chunk, input_type)
             all_embeddings.extend(embeddings)
+            if on_progress:
+                on_progress(end, total)
 
         return all_embeddings
 
