@@ -2,7 +2,7 @@
 
 These tests hit the real Supabase DB and real LLM providers (Groq/Gemini).
 They are intentionally slow (~10–30s each) and require environment variables:
-  DATABASE_URL, GROQ_API_KEY, VOYAGE_API_KEY
+  DATABASE_URL, GROQ_API_KEY, JINA_API_KEY
 
 Run with:
     python -m pytest tests/test_pipeline_integration.py -v -s
@@ -46,11 +46,11 @@ pytestmark = pytest.mark.integration
 # Skip automatically if no DB or API keys are configured
 _HAS_DB = bool(os.environ.get("DATABASE_URL"))
 _HAS_GROQ = bool(os.environ.get("GROQ_API_KEY"))
-_HAS_VOYAGE = bool(os.environ.get("VOYAGE_API_KEY"))
+_HAS_JINA = bool(os.environ.get("JINA_API_KEY"))
 
-if not (_HAS_DB and _HAS_GROQ and _HAS_VOYAGE):
+if not (_HAS_DB and _HAS_GROQ and _HAS_JINA):
     pytest.skip(
-        "Integration tests require DATABASE_URL, GROQ_API_KEY, and VOYAGE_API_KEY.",
+        "Integration tests require DATABASE_URL, GROQ_API_KEY, and JINA_API_KEY.",
         allow_module_level=True,
     )
 
@@ -283,8 +283,8 @@ class TestMultiTurnConversation:
                 raise
             assert result1.stm.answer_text
 
-            # Voyage free tier = 3 RPM — wait to avoid hitting it
-            time.sleep(25)
+            # Jina free tier = 100 RPM — no need to wait, but keep a small gap
+            time.sleep(1)
 
             # Turn 2: ask a follow-up referencing the first answer
             history = [
@@ -485,7 +485,7 @@ class TestSTMDeduplication:
                 results = search("main entry function", ready_repo_id, top_k=5, db_session=db)
             except Exception as exc:
                 if "rate" in str(exc).lower() or "429" in str(exc):
-                    pytest.skip(f"Voyage rate limit: {exc}")
+                    pytest.skip(f"Jina rate limit: {exc}")
                 raise
             expanded = expand(results, ready_repo_id, db)
 
@@ -501,13 +501,13 @@ class TestSTMDeduplication:
                 missing={"type": "feature", "entity": first_entity},
             )
 
-            time.sleep(22)  # Voyage free tier: 3 RPM — wait to avoid rate limit
+            time.sleep(1)  # Jina free tier: 100 RPM — minimal wait needed
 
             try:
                 new_chunks = fetch(stm, agent_resp, ready_repo_id, db)
             except Exception as exc:
                 if "rate" in str(exc).lower() or "429" in str(exc):
-                    pytest.skip(f"Voyage rate limit on re-retrieval: {exc}")
+                    pytest.skip(f"Jina rate limit on re-retrieval: {exc}")
                 raise
 
         print(f"\nDedup test: initial entities={len(results)}, new_chunks={len(new_chunks)}")

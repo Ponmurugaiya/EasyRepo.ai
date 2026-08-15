@@ -65,7 +65,7 @@ if _ENV_PATH.exists():
 
 TODAY = date.today().isoformat()
 DB_URL = os.environ.get("DATABASE_URL", "")
-VOYAGE_KEY = os.environ.get("VOYAGE_API_KEY", "")
+JINA_KEY = os.environ.get("JINA_API_KEY", "")
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -139,7 +139,7 @@ def _env_block(script_name: str, repo_id: str = "") -> str:
     lines += [
         "**Environment:**",
         f"- DATABASE_URL: `{_safe_db_url(DB_URL)}`",
-        f"- VOYAGE_API_KEY: `{_key_prefix(VOYAGE_KEY)}`",
+        f"- JINA_API_KEY: `{_key_prefix(JINA_KEY)}`",
     ]
     if "test_ask" in script_name or "pillar4" in script_name or "pillar5" in script_name:
         lines += [
@@ -336,7 +336,7 @@ def run_pillar2(repo_id: str) -> bool:
 # Pillar 2 — Storage & Embedding Quality Results
 
 {_env_block('verify_storage.py', repo_id)}
-- Embedding model: `voyage-code-3` (1024 dimensions)
+- Embedding model: `jina-code-embeddings-1.5b` (1024 dimensions)
 
 ---
 

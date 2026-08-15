@@ -210,7 +210,7 @@ def write_pillar_result(
 **Repo ID in DB:** `{repo_id}`
 **Environment:**
 - DATABASE_URL: `{db_display}`
-- Embedding model: voyage-code-3 (1024 dimensions)
+- Embedding model: jina-code-embeddings-1.5b (1024 dimensions)
 - Generation model: groq/llama-3.3-70b-versatile → gemini/gemini-2.5-flash (fallback)
 - Script: `evaluation/scripts/{script_name}`
 

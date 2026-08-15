@@ -71,16 +71,16 @@ const STAGES: Stage[] = [
     keyword: "embedding",
     label: "Generating embeddings",
     detail: (msg) => {
-      // "Embedding 256/412 entities…" or "Generating embeddings for 412 entities via Voyage AI…"
+      // "Embedding 256/412 entities…" or "Generating embeddings for 412 entities via Jina AI…"
       const progress = msg.match(/(\d+)\/(\d+)/);
       if (progress) {
         const done = parseInt(progress[1]);
         const total = parseInt(progress[2]);
         const pct = Math.round((done / total) * 100);
-        return `Converting code into semantic vectors via Voyage AI — ${done} of ${total} entities (${pct}%).`;
+        return `Converting code into semantic vectors via Jina AI — ${done} of ${total} entities (${pct}%).`;
       }
       const total = msg.match(/for\s+(\d+)\s+entit/i);
-      return `Sending code to Voyage AI to generate semantic search vectors${total ? ` for ${total[1]} entities` : ""}. This is the longest step.`;
+      return `Sending code to Jina AI to generate semantic search vectors${total ? ` for ${total[1]} entities` : ""}. This is the longest step.`;
     },
     Icon: Cpu,
     tipTime: "1–3 min",
@@ -211,7 +211,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
               { msg: "Cloning repository…|pct=5",                              delay: 250 },
               { msg: "Parsing source files…|pct=15",                          delay: 350 },
               { msg: "Resolving relationships for entities…|pct=30",          delay: 300 },
-              { msg: "Generating embeddings for entities via Voyage AI…|pct=55", delay: 400 },
+              { msg: "Generating embeddings for entities via Jina AI…|pct=55", delay: 400 },
               { msg: "Embedding entities…|pct=88",                            delay: 300 },
               { msg: "Saving to database…|pct=95",                            delay: 250 },
             ];
@@ -517,7 +517,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
 
                   <p className="text-center text-xs text-zinc-600 pb-1">
                     {activeStageIdx === 3
-                      ? "Embedding is the slowest step — Voyage AI is generating vectors"
+                      ? "Embedding is the slowest step — Jina AI is generating vectors"
                       : "Usually completes in 2–5 minutes for medium repos"}
                   </p>
                 </>

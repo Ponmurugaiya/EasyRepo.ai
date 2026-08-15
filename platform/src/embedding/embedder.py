@@ -1,18 +1,17 @@
-"""Code entity embedding via Voyage AI voyage-code-3 API.
+"""Code entity embedding via Jina AI jina-code-embeddings-1.5b API.
 
-Replaces the local SentenceTransformers/torch stack with a lightweight HTTP
-call to Voyage AI. No GPU/CPU model loading — each embed_batch() call sends
-texts to the API and returns vectors.
+Replaces the voyageai SDK with a plain httpx POST to the Jina Embeddings REST
+API. No SDK dependency — httpx is already in the project's requirements.
 
-voyage-code-3 specifics:
-- 1024 dimensions
+jina-code-embeddings-1.5b specifics:
+- 1536 native dimensions, truncated to 1024 via Matryoshka (dimensions=1024)
 - 32K token context window
-- input_type="document" for indexing, "query" for search
-- Batch size up to 128 texts per request
+- task="nl2code.passage" for indexing, "nl2code.query" for search queries
+- No stated batch size limit on the API
 
 Rate limiting strategy
 ----------------------
-Texts are packed into token-aware batches (≤ MAX_TOKENS_PER_REQUEST tokens
+Texts are packed into token-aware batches (≤ JINA_MAX_TOKENS_REQUEST tokens
 each). A sliding-window rate limiter tracks the last N request timestamps and
 sleeps just long enough to stay within RPM_LIMIT before each call. This means:
   - No fixed sleeps — waits only as long as needed
@@ -20,9 +19,9 @@ sleeps just long enough to stay within RPM_LIMIT before each call. This means:
   - Adapts automatically to paid-tier limits via env vars
 
 Environment overrides:
-  VOYAGE_RPM_LIMIT          max requests per minute      (default: 3)
-  VOYAGE_MAX_TOKENS_REQUEST max tokens per request       (default: 9000)
-  VOYAGE_RETRY_BASE_DELAY   base backoff on 429 (secs)   (default: 22)
+  JINA_RPM_LIMIT          max requests per minute      (default: 100 — free tier)
+  JINA_MAX_TOKENS_REQUEST max tokens per request       (default: 8000)
+  JINA_RETRY_BASE_DELAY   base backoff on 429 (secs)   (default: 2)
 
 Usage:
     embedder = CodeEmbedder()
@@ -38,29 +37,32 @@ import re
 import time
 from typing import Any, Callable
 
-import voyageai
+import httpx
 
 from src.embedding.config import (
     EMBEDDING_DIM,
-    INPUT_TYPE,
-    VOYAGE_API_KEY,
-    VOYAGE_MODEL,
+    JINA_API_KEY,
+    JINA_MODEL,
+    TASK_PASSAGE,
+    TASK_QUERY,
 )
 
 logger = logging.getLogger(__name__)
 
+_JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
+
 # ── Rate-limit config (overridable via env vars) ──────────────────────────────
-# Free tier:  3 RPM, 10K TPM  → set defaults conservatively
-# Paid tier:  add payment method → 2000 RPM, 3M TPM
-#             set VOYAGE_RPM_LIMIT=2000 (or leave headroom at e.g. 200)
-_RPM_LIMIT = int(os.environ.get("VOYAGE_RPM_LIMIT", "3"))
-_MAX_TOKENS_PER_REQUEST = int(os.environ.get("VOYAGE_MAX_TOKENS_REQUEST", "9000"))
+# Free tier:  100 RPM, 100K TPM  → default conservatively to free tier
+# Paid tier:  top up via Stripe → 500 RPM, 2M TPM
+#             set JINA_RPM_LIMIT=500
+_RPM_LIMIT = int(os.environ.get("JINA_RPM_LIMIT", "100"))
+_MAX_TOKENS_PER_REQUEST = int(os.environ.get("JINA_MAX_TOKENS_REQUEST", "8000"))
 
-# Retry config
+# Retry config — Jina returns 429 with a Retry-After header; use short backoff
 _MAX_RETRIES = 6
-_RETRY_BASE_DELAY = float(os.environ.get("VOYAGE_RETRY_BASE_DELAY", "22.0"))
+_RETRY_BASE_DELAY = float(os.environ.get("JINA_RETRY_BASE_DELAY", "2.0"))
 
-# Rough token estimator: Voyage tokeniser is ~4 chars/token for code.
+# Rough token estimator: ~4 chars/token for code (same conservative estimate).
 _CHARS_PER_TOKEN = 4
 
 
@@ -188,56 +190,66 @@ def format_entity_for_embedding(entity: Any) -> str:
 
 
 class CodeEmbedder:
-    """Embedder for code entities and queries using Voyage AI voyage-code-3.
+    """Embedder for code entities and queries using Jina AI jina-code-embeddings-1.5b.
 
-    Internally uses a token-aware batcher and a sliding-window rate limiter
-    so it never exceeds the configured RPM/TPM limits regardless of repo size.
+    Uses the Jina Embeddings REST API via httpx. Internally uses a token-aware
+    batcher and a sliding-window rate limiter so it never exceeds the configured
+    RPM/TPM limits regardless of repo size.
+
+    Get a free API key at: https://jina.ai/?sui=apikey
     """
 
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = VOYAGE_MODEL,
+        model: str = JINA_MODEL,
     ) -> None:
         self.model = model
-        key = api_key or VOYAGE_API_KEY or os.environ.get("VOYAGE_API_KEY", "")
+        key = api_key or JINA_API_KEY or os.environ.get("JINA_API_KEY", "")
         if not key:
             raise ValueError(
-                "VOYAGE_API_KEY is not set. "
-                "Sign up at https://www.voyageai.com and add it to your .env file."
+                "JINA_API_KEY is not set. "
+                "Get a free API key at https://jina.ai/?sui=apikey and add it to your .env file."
             )
-        self._client = voyageai.Client(api_key=key)
+        self._headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
         self._rate_limiter = _SlidingWindowRateLimiter(rpm_limit=_RPM_LIMIT)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def embed(self, text: str, input_type: str = INPUT_TYPE) -> list[float]:
+    def embed(self, text: str, task: str = TASK_PASSAGE) -> list[float]:
         """Embed a single text string and return a float vector."""
-        return self.embed_batch([text], input_type=input_type)[0]
+        return self.embed_batch([text], task=task)[0]
 
     def embed_query(self, text: str) -> list[float]:
-        """Embed a search query (uses input_type='query' for better retrieval)."""
-        return self.embed(text, input_type="query")
+        """Embed a search query (uses task='nl2code.query' for better retrieval)."""
+        return self.embed(text, task=TASK_QUERY)
 
     def embed_batch(
         self,
         texts: list[str],
         batch_size: int | None = None,  # ignored — token-aware batching takes over
-        input_type: str = INPUT_TYPE,
+        input_type: str | None = None,  # legacy param — ignored, use task instead
+        task: str = TASK_PASSAGE,
         on_progress: Callable[[int, int], None] | None = None,
         on_wait: Callable[[float], None] | None = None,
     ) -> list[list[float]]:
         """Embed a list of texts, returning one vector per text.
 
-        Packs texts into token-aware batches (≤ VOYAGE_MAX_TOKENS_REQUEST
-        tokens each) and enforces the RPM limit via a sliding-window limiter.
+        Packs texts into token-aware batches (≤ JINA_MAX_TOKENS_REQUEST tokens
+        each) and enforces the RPM limit via a sliding-window limiter.
         Retries on 429 with exponential backoff.
 
         Args:
             texts: Texts to embed.
             batch_size: Ignored — kept for API compatibility. Token-aware
                         batching is used instead.
-            input_type: "document" for indexing, "query" for search.
+            input_type: Ignored — kept for API compatibility. Use task instead.
+            task: Jina task type. "nl2code.passage" for indexing,
+                  "nl2code.query" for search queries.
             on_progress: Optional callback(done, total) called after each
                          batch completes successfully.
             on_wait: Optional callback(seconds) called just before the rate
@@ -250,7 +262,7 @@ class CodeEmbedder:
         total = len(texts)
         batches = _build_token_aware_batches(texts, _MAX_TOKENS_PER_REQUEST)
         logger.info(
-            "Voyage embed: %d texts → %d token-aware batches "
+            "Jina embed: %d texts → %d token-aware batches "
             "(max %d tokens/batch, %d RPM limit)",
             total, len(batches), _MAX_TOKENS_PER_REQUEST, _RPM_LIMIT,
         )
@@ -261,14 +273,14 @@ class CodeEmbedder:
         for i, batch in enumerate(batches):
             est_tokens = sum(_estimate_tokens(t) for t in batch)
             logger.info(
-                "Voyage embed: batch %d/%d — %d texts, ~%d tokens",
+                "Jina embed: batch %d/%d — %d texts, ~%d tokens",
                 i + 1, len(batches), len(batch), est_tokens,
             )
 
             # Acquire a rate-limit slot (sleeps only if needed, fires on_wait)
             self._rate_limiter.acquire(on_wait=on_wait)
 
-            embeddings = self._embed_with_retry(batch, input_type)
+            embeddings = self._embed_with_retry(batch, task)
             all_embeddings.extend(embeddings)
             done += len(batch)
 
@@ -280,29 +292,58 @@ class CodeEmbedder:
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _embed_with_retry(
-        self, texts: list[str], input_type: str
+        self, texts: list[str], task: str
     ) -> list[list[float]]:
-        """Call the Voyage API with exponential backoff on rate-limit errors."""
+        """Call the Jina Embeddings API with exponential backoff on rate-limit errors."""
         delay = _RETRY_BASE_DELAY
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
-                result = self._client.embed(
-                    texts,
-                    model=self.model,
-                    input_type=input_type,
-                )
-                return [vec for vec in result.embeddings]
-            except Exception as exc:
-                err = str(exc).lower()
-                is_rate_limit = "429" in err or "rate limit" in err or "too many" in err
+                return self._call_api(texts, task)
+            except httpx.HTTPStatusError as exc:
+                is_rate_limit = exc.response.status_code == 429
                 if is_rate_limit and attempt < _MAX_RETRIES:
+                    # Honour Retry-After if present, else use exponential backoff
+                    retry_after = exc.response.headers.get("Retry-After")
+                    wait = float(retry_after) if retry_after else delay
                     logger.warning(
-                        "Voyage rate limit hit (attempt %d/%d), retrying in %.1fs...",
-                        attempt, _MAX_RETRIES, delay,
+                        "Jina rate limit hit (attempt %d/%d), retrying in %.1fs…",
+                        attempt, _MAX_RETRIES, wait,
+                    )
+                    time.sleep(wait)
+                    delay *= 2
+                else:
+                    raise
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt < _MAX_RETRIES:
+                    logger.warning(
+                        "Jina network error (attempt %d/%d): %s — retrying in %.1fs…",
+                        attempt, _MAX_RETRIES, exc, delay,
                     )
                     time.sleep(delay)
                     delay *= 2
                 else:
                     raise
         # Should never reach here
-        raise RuntimeError("Voyage embed failed after max retries")
+        raise RuntimeError("Jina embed failed after max retries")
+
+    def _call_api(self, texts: list[str], task: str) -> list[list[float]]:
+        """Make a single POST request to the Jina Embeddings API."""
+        payload = {
+            "model": self.model,
+            "input": texts,
+            "dimensions": EMBEDDING_DIM,
+            "task": task,
+            "truncate": True,   # silently truncate inputs that exceed context window
+        }
+        with httpx.Client(timeout=120.0) as client:
+            response = client.post(
+                _JINA_EMBED_URL,
+                headers=self._headers,
+                json=payload,
+            )
+            response.raise_for_status()
+
+        data = response.json()
+        # Jina response: {"data": [{"index": 0, "embedding": [...]}, ...], ...}
+        items = sorted(data["data"], key=lambda x: x["index"])
+        return [item["embedding"] for item in items]

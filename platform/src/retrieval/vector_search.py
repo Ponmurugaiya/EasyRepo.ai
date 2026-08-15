@@ -10,7 +10,7 @@ from src.storage.models import EntityModel
 from src.retrieval.models import RetrievalResult
 
 # Lazy singleton — not created until first search call so tests that
-# mock the DB can import this module without triggering a voyageai network call.
+# mock the DB can import this module without triggering a network call.
 _embedder = None
 
 
@@ -53,7 +53,7 @@ def search(
         raise ValueError("db_session is required for vector search.")
 
     emb_service = embedder or get_embedder()
-    # Use input_type="query" for search queries — Voyage optimises differently
+    # Use task="nl2code.query" for search queries — Jina optimises differently
     # for queries vs indexed documents, improving retrieval accuracy.
     query_vector = emb_service.embed_query(query)
 

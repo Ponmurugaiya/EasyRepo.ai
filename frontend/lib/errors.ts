@@ -21,10 +21,10 @@ export function friendlyMessage(err: ApiError): string {
       return "We're receiving a lot of requests right now. Please wait a moment and try again.";
 
     case "llm_auth_error":
-    case "voyage_auth_error":
+    case "jina_auth_error":
       return "There's a configuration issue on our end. Please contact support if this persists.";
 
-    case "voyage_rate_limited":
+    case "jina_rate_limited":
       return "The embedding service is temporarily rate limited. Please try again shortly.";
 
     case "repo_not_ready":
@@ -73,8 +73,8 @@ export function friendlyIngestError(rawMessage: string | null | undefined): stri
   if (msg.includes("rate limit") || msg.includes("429") || msg.includes("too many")) {
     return "Indexing paused — embedding service rate limit reached. Try re-indexing shortly.";
   }
-  if (msg.includes("voyage") && (msg.includes("auth") || msg.includes("401") || msg.includes("invalid"))) {
-    return "Indexing failed — Voyage AI key is invalid or missing. Check your configuration.";
+  if (msg.includes("jina") && (msg.includes("auth") || msg.includes("401") || msg.includes("invalid"))) {
+    return "Indexing failed — Jina AI key is invalid or missing. Check your configuration.";
   }
   if (msg.includes("git clone") || msg.includes("clone failed")) {
     return "Could not clone the repository. Check the URL and try again.";

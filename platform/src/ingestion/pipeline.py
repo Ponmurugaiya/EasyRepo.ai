@@ -20,7 +20,7 @@ Stages (in order):
   1. "Cloning repository…"
   2. "Parsing source files…"
   3. "Resolving relationships for N entities…"
-  4. "Generating embeddings for N entities via Voyage AI…"
+  4. "Generating embeddings for N entities via Jina AI…"
      → updated per-batch: "Embedding X/N entities…"
   5. "Saving to database…"
   done → status = "ready", progress_message = None
@@ -128,18 +128,18 @@ def _friendly_ingest_error(exc: Exception) -> str:
 
     if "rate limit" in msg or "429" in msg or "too many" in msg:
         return "Indexing paused — embedding service rate limit reached. Try re-indexing shortly."
-    if "voyage" in msg and any(k in msg for k in ("auth", "401", "invalid", "forbidden")):
-        return "Indexing failed — Voyage AI key is invalid or missing. Check your configuration."
-    if "voyage_api_key" in msg or "voyage api key" in msg:
-        return "Indexing failed — VOYAGE_API_KEY is not set. Add it to your .env file."
+    if "jina" in msg and any(k in msg for k in ("auth", "401", "invalid", "forbidden", "403")):
+        return "Indexing failed — Jina AI key is invalid or missing. Check your configuration."
+    if "jina_api_key" in msg or "jina api key" in msg:
+        return "Indexing failed — JINA_API_KEY is not set. Add it to your .env file."
     if "git clone" in msg or "clone failed" in msg:
         return "Could not clone the repository. Check the URL and try again."
     if "does not exist" in msg or "no such file" in msg:
         return "Repository path not found. Check the URL or local path."
     if "timeout" in msg or "timed out" in msg:
         return "Indexing timed out. The repository may be too large — try again."
-    if "voyage embed failed after max retries" in msg:
-        return "Indexing failed — Voyage AI embedding retries exhausted. Try again in a few minutes."
+    if "jina embed failed after max retries" in msg:
+        return "Indexing failed — Jina AI embedding retries exhausted. Try again in a few minutes."
     if "no python or typescript files" in msg:
         return str(exc)  # already a clean user-facing message
 
@@ -310,7 +310,7 @@ def ingest_repository(
         # ── Stage 4: embedding ────────────────────────────────────────────────
         t3 = time.perf_counter()
         n = len(extracted_ents)
-        progress(f"Generating embeddings for {n} entities via Voyage AI…", pct=35)
+        progress(f"Generating embeddings for {n} entities via Jina AI…", pct=35)
 
         embedder = CodeEmbedder()
         texts = [format_entity_for_embedding(e) for e in extracted_ents]
