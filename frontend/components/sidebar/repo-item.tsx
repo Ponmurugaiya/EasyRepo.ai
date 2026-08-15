@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { cn, truncate } from "../../lib/utils";
+import { parseProgress } from "../../lib/progress";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { MessageSquare, GitBranch, RefreshCw } from "lucide-react";
 import { ingestRepository, getRepositoryStatus, getRepository, cancelRepositoryIndexing } from "../../lib/api";
@@ -167,9 +168,9 @@ export function RepoItem({
           ) : null}
 
           {reindexing && (() => {
-            const msg = repo.progressMessage?.trim() ?? "";
-            const isWaiting = msg.includes("Too many requests");
-            const displayMsg = msg || "Re-indexing…";
+            const { message } = parseProgress(repo.progressMessage?.trim());
+            const isWaiting = message.includes("Too many requests");
+            const displayMsg = message || "Re-indexing…";
             return (
               <div className="mt-0.5 flex items-center justify-between gap-1">
                 <p className={`text-[10px] animate-pulse truncate ${isWaiting ? "text-amber-400" : "text-blue-400"}`}>
@@ -192,11 +193,12 @@ export function RepoItem({
           {!reindexing && repo.status === "failed" && repo.progressMessage && (
             <p
               className="mt-1 text-[10px] leading-tight text-red-400"
-              title={repo.progressMessage}
+              title={parseProgress(repo.progressMessage).message}
             >
-              {repo.progressMessage.length > 72
-                ? repo.progressMessage.slice(0, 69) + "…"
-                : repo.progressMessage}
+              {(() => {
+                const txt = parseProgress(repo.progressMessage).message;
+                return txt.length > 72 ? txt.slice(0, 69) + "…" : txt;
+              })()}
             </p>
           )}
         </div>

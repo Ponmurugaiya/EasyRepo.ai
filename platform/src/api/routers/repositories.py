@@ -348,13 +348,12 @@ async def get_repository_status(
     """Return the ingestion status of a repository the caller has access to."""
     repo = get_accessible_repository(repo_id, db, current_user)
     lang_warning = _extract_language_warning(repo.progress_message)
-    # Strip the |warn= and |pct= suffixes from the progress message before returning it
+    # Strip |warn= suffix (used internally to store language warnings)
     progress_msg = repo.progress_message
     if lang_warning and progress_msg:
-        progress_msg = progress_msg[: progress_msg.find("|warn=")]  or None
-    # Strip |pct= suffix (used internally for progress percentage encoding)
-    if progress_msg and "|pct=" in progress_msg:
-        progress_msg = progress_msg[: progress_msg.find("|pct=")].strip() or None
+        progress_msg = progress_msg[: progress_msg.find("|warn=")] or None
+    # NOTE: |pct= suffix is intentionally kept — the frontend's parseProgress()
+    # extracts it to drive the progress bar. Stripping it here broke the UI.
     return RepositoryStatusResponse(
         repo_id=repo.id,
         name=repo.name,
