@@ -41,7 +41,7 @@ const OVERVIEW_STAGES: StageDef[] = [
       p && p.files_total > 0
         ? `Reading files  ${p.files_done} / ${p.files_total}`
         : "Reading files…",
-    detail: "Summarising every file in the repository…",
+    detail: "Reading and analysing every file in the repository…",
   },
   {
     key: "insights",
