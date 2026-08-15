@@ -101,6 +101,7 @@ export const useChatStore = create<ChatState>()(
               entityCount: repo.entity_count,
               relationshipCount: repo.relationship_count,
               indexedAt: repo.indexed_at,
+              languageWarning: repo.language_warning ?? null,
             },
           },
         })),
@@ -329,6 +330,7 @@ export const useChatStore = create<ChatState>()(
             entityCount: repo.entity_count,
             relationshipCount: repo.relationship_count,
             indexedAt: repo.indexed_at,
+            languageWarning: repo.language_warning ?? null,
           };
         }
         const accessibleIds = new Set(Object.keys(newSessions));

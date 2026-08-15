@@ -110,6 +110,7 @@ async def list_repositories(
             entity_count=entity_count,
             relationship_count=relationship_count,
             indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
+            language_warning=_extract_language_warning(repo.progress_message),
         ))
     return results
 

@@ -227,6 +227,7 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
           updateRepoSession(repo.repo_id, {
             entityCount: full.entity_count,
             relationshipCount: full.relationship_count,
+            languageWarning: full.language_warning ?? null,
           });
           setEntityCount(full.entity_count);
           setRelCount(full.relationship_count);

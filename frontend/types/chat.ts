@@ -61,10 +61,12 @@ export interface RepoSession {
   repoId: string;
   repoName: string;
   repoUrl: string;
-  status: "pending" | "indexing" | "ready" | "failed";
+  status: "pending" | "indexing" | "ready" | "failed" | "cancelled";
   entityCount: number;
   relationshipCount: number;
   indexedAt: string | null;
   /** Human-readable progress or failure reason from the backend. */
   progressMessage?: string | null;
+  /** Warning shown when a repo has unsupported languages alongside Python/TS. */
+  languageWarning?: string | null;
 }

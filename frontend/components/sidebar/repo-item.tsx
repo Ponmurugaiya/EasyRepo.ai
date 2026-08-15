@@ -58,6 +58,7 @@ export function RepoItem({
             relationshipCount: full.relationship_count ?? 0,
             indexedAt: full.indexed_at,
             progressMessage: null,
+            languageWarning: full.language_warning ?? null,
           });
           if (graphRepoId === repo.repoId) refreshGraph();
           break;
@@ -199,6 +200,15 @@ export function RepoItem({
                 const txt = parseProgress(repo.progressMessage).message;
                 return txt.length > 72 ? txt.slice(0, 69) + "…" : txt;
               })()}
+            </p>
+          )}
+
+          {/* Language warning — shown when repo has unsupported languages */}
+          {!reindexing && repo.status === "ready" && repo.languageWarning && (
+            <p className="mt-1 text-[10px] leading-tight text-amber-400" title={repo.languageWarning}>
+              {repo.languageWarning.length > 72
+                ? repo.languageWarning.slice(0, 69) + "…"
+                : repo.languageWarning}
             </p>
           )}
         </div>
