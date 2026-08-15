@@ -37,8 +37,8 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
     graphData, loading, error,
     expandedFiles, toggleExpand,
     highlightedEntityId, highlightedFileId,
-    selectedRoot, depth, includeImports,
-    setRoot, setDepth, setIncludeImports,
+    selectedRoot, depth, includeImports, showAll,
+    setRoot, setDepth, setIncludeImports, setShowAll,
     refreshGraph, openGraph,
     expandAll, collapseAll,
   } = useGraphStore();
@@ -235,6 +235,13 @@ export function GraphPanel({ repoId, onEntityClick }: GraphPanelProps) {
             onChange={(e) => setIncludeImports(e.target.checked)}
             className="accent-blue-500" />
           Imports
+        </label>
+
+        <label className="flex items-center gap-1 text-xs text-zinc-400 cursor-pointer select-none">
+          <input type="checkbox" checked={showAll}
+            onChange={(e) => setShowAll(e.target.checked)}
+            className="accent-blue-500" />
+          All files
         </label>
 
         <div className="flex-1" />

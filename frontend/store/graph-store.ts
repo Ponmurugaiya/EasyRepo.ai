@@ -31,6 +31,7 @@ interface GraphState {
   userRoot: string | null;       // what the user explicitly picked from the dropdown
   depth: number;
   includeImports: boolean;
+  showAll: boolean;              // show every file node regardless of edges
 
   // Actions
   openGraph: (repoId: string, options?: { root?: string }) => Promise<void>;
@@ -39,6 +40,7 @@ interface GraphState {
   setRoot: (entityId: string) => void;
   setDepth: (depth: number) => void;
   setIncludeImports: (v: boolean) => void;
+  setShowAll: (v: boolean) => void;
 
   toggleExpand: (fileId: string) => void;
   expandAll: () => void;
@@ -66,13 +68,21 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   userRoot: null,
   depth: 4,
   includeImports: true,
+  showAll: true,               // default: show every file node
 
   openGraph: async (repoId, options = {}) => {
-    const { depth, includeImports } = get();
+    const { depth, includeImports, showAll } = get();
     const root = options.root ?? undefined;
     set({ isOpen: true, activeRepoId: repoId, loading: true, error: null, graphData: null, selectedRoot: null, userRoot: null });
     try {
-      const data = await getFileGraph(repoId, { root, depth, includeImports });
+      // When no explicit root is set, always request all nodes so the graph
+      // never appears empty just because edges haven't resolved yet.
+      const data = await getFileGraph(repoId, {
+        root,
+        depth,
+        includeImports,
+        showAll: root ? false : showAll,
+      });
       set({ graphData: data, selectedRoot: data.root ?? null, loading: false, expandedFiles: new Set() });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
@@ -82,17 +92,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   closeGraph: () => set({ isOpen: false, hoveredNodeId: null, hoveredEdgeKey: null }),
 
   refreshGraph: async (root) => {
-    const { activeRepoId, depth, includeImports, userRoot } = get();
+    const { activeRepoId, depth, includeImports, userRoot, showAll } = get();
     if (!activeRepoId) return;
     set({ loading: true, error: null, graphData: null });
     try {
+      const effectiveRoot = root ?? userRoot ?? undefined;
       const data = await getFileGraph(activeRepoId, {
-        // Only use userRoot if user explicitly picked one from the dropdown.
-        // Never fall back to the backend-returned selectedRoot — it may be
-        // a leaf node that returns only 1 result when used as BFS root.
-        root: root ?? userRoot ?? undefined,
+        root: effectiveRoot,
         depth,
         includeImports,
+        // Use show_all when no explicit root is set — otherwise BFS from the root
+        showAll: effectiveRoot ? false : showAll,
       });
       set({ graphData: data, selectedRoot: data.root ?? null, loading: false, expandedFiles: new Set() });
     } catch (err) {
@@ -101,11 +111,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   setRoot: (entityId) => {
-    set({ selectedRoot: entityId, userRoot: entityId }); // user explicitly picked
+    set({ selectedRoot: entityId, userRoot: entityId });
     get().refreshGraph(entityId);
   },
   setDepth: (depth) => { set({ depth }); get().refreshGraph(); },
   setIncludeImports: (v) => { set({ includeImports: v }); get().refreshGraph(); },
+  setShowAll: (v) => { set({ showAll: v }); get().refreshGraph(); },
 
   toggleExpand: (fileId) => {
     const next = new Set(get().expandedFiles);

@@ -191,16 +191,31 @@ def _resolve_relative(
         dots = len(module_path) - len(module_path.lstrip("."))
         rest = module_path.lstrip(".")
 
-        # dots=1 → same package dir; dots=2 → parent dir; etc.
-        base = current_dir
+        # Use the same virtual-root technique as TypeScript to avoid
+        # PurePosixPath(".").as_posix() == "." producing "./foo" paths
+        # that never match any key in file_path_to_module.
+        # e.g. server/app.py + "..models" → dots=2, current_dir="server"
+        #   virtual: /VROOT/server  navigate 1 level up → /VROOT
+        #   + "models" → /VROOT/models → normalised → "models"
+        #   → correctly matches file_path_to_module key "models.py"
+        virtual_base = "/VROOT/" + current_dir.as_posix()
         for _ in range(dots - 1):
-            base = base.parent
+            virtual_base = posixpath.dirname(virtual_base)
 
-        # Build posix path to the target module
         if rest:
-            target_posix = base.as_posix() + "/" + rest.replace(".", "/")
+            virtual_target = virtual_base + "/" + rest.replace(".", "/")
         else:
-            target_posix = base.as_posix()
+            virtual_target = virtual_base
+
+        normalised = posixpath.normpath(virtual_target)
+        prefix = "/VROOT/"
+        if normalised.startswith(prefix):
+            target_posix = normalised[len(prefix):]
+        elif normalised == "/VROOT":
+            # dots navigated above repo root — degenerate case
+            target_posix = ""
+        else:
+            target_posix = normalised.lstrip("/")
 
         # Try to find a matching module entity by file_path
         return _find_python_module_by_path(target_posix, file_path_to_module, module_entities)
@@ -258,6 +273,13 @@ def _find_python_module_by_path(
     module_entities: dict[str, Entity],
 ) -> Optional[str]:
     """Match a target posix path (without extension) to a python module entity."""
+    # Defensive: strip any leading "./" that can appear when the virtual-root
+    # normalisation produces a path relative to the repo root (e.g. "./models").
+    if target_posix.startswith("./"):
+        target_posix = target_posix[2:]
+    if not target_posix or target_posix == ".":
+        return None
+
     # Try with .py extension
     candidate_file = target_posix + ".py"
     if candidate_file in file_path_to_module:
@@ -268,15 +290,15 @@ def _find_python_module_by_path(
     if candidate_init in file_path_to_module:
         return file_path_to_module[candidate_init].id
 
-    # Fuzzy: try stripping leading language dir
-    # e.g. target "python/models/base" -> check entity IDs ending in "models.base"
-    parts = target_posix.split("/")
-    # Drop leading "python" dir if present
+    # Fuzzy: strip leading "python/" prefix if present, then match by entity ID.
+    # e.g. "python/models/base" → candidate "py.models.base"
+    parts = [p for p in target_posix.split("/") if p and p != "."]
     if parts and parts[0] == "python":
         parts = parts[1:]
-    candidate_id = "py." + ".".join(parts)
-    if candidate_id in module_entities:
-        return candidate_id
+    if parts:
+        candidate_id = "py." + ".".join(parts)
+        if candidate_id in module_entities:
+            return candidate_id
 
     return None
 

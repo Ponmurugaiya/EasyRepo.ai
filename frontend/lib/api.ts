@@ -170,6 +170,10 @@ export async function cancelRepositoryIndexing(
   return request(`/repositories/${repoId}/cancel`, { method: "POST" });
 }
 
+export async function deleteRepository(repoId: string): Promise<void> {
+  return request<void>(`/repositories/${repoId}`, { method: "DELETE" });
+}
+
 // ── Ask ─────────────────────────────────────────────────────────────────────
 
 export interface AskJobSubmittedResponse {
@@ -287,8 +291,6 @@ export async function getEntitySource(
     `/repositories/${repoId}/entities/${encodeURIComponent(entityId)}/source`
   );
 }
-
-// ── Health ───────────────────────────────────────────────────────────────────
 
 export async function getHealth(): Promise<{ status: string; database: string }> {
   return request("/health");

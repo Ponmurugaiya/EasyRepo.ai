@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import (
@@ -270,6 +270,38 @@ def _ensure_access(user_id: str, repo_id: str, default_role: str, db: Session) -
     if not existing:
         grant_repo_access(user_id, repo_id, default_role, db)
     # If they already have owner and we'd grant viewer, keep owner — no downgrade.
+
+
+# ---------------------------------------------------------------------------
+# Delete repository (force re-index)
+# ---------------------------------------------------------------------------
+
+@router.delete("/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@_limiter.limit(_RATE_DEFAULT)
+async def delete_repository(
+    request: Request,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> None:
+    """Delete a repository and all its indexed data.
+
+    Removes the repository row, all entities, relationships, and access
+    grants. The caller must be an owner (or auth must be disabled).
+
+    After deletion the same URL can be re-submitted to ``POST /repositories``
+    to trigger a fresh index — useful when the indexer logic has been updated.
+    """
+    repo = get_accessible_repository(repo_id, db, current_user)
+    require_owner(repo_id, db, current_user)
+
+    # Cascade-delete all child rows explicitly (FK constraints may not cascade
+    # in all deployment configurations).
+    db.execute(delete(RelationshipModel).where(RelationshipModel.repo_id == repo_id))
+    db.execute(delete(EntityModel).where(EntityModel.repo_id == repo_id))
+    db.execute(delete(UserRepoModel).where(UserRepoModel.repo_id == repo_id))
+    db.delete(repo)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------

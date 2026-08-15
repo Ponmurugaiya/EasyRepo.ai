@@ -400,10 +400,19 @@ class PythonAdapter(LanguageAdapter):
 
     @staticmethod
     def _walk_flat(node: tree_sitter.Node):
-        """Yield only top-level nodes (do not descend into function/class bodies)."""
+        """Yield only top-level nodes (do not descend into function/class bodies).
+
+        Special cases that *are* descended into:
+        - ``if __name__ == "__main__":`` blocks — standard Python entry points.
+        - ``try:`` / ``except:`` / ``else:`` / ``finally:`` clauses — imports
+          inside try/except guards (e.g. ``try: from ..models import X except
+          ImportError: from models import X``) must be visible to the import
+          resolver so cross-file edges are built correctly.
+        """
         for child in node.children:
             yield child
-            # Descend into if __name__ == "__main__" blocks only
+
+            # Descend into if __name__ == "__main__" blocks
             if child.type == "if_statement":
                 cond = child.child_by_field_name("condition")
                 if cond:
@@ -416,6 +425,28 @@ class PythonAdapter(LanguageAdapter):
                         body = child.child_by_field_name("consequence")
                         if body:
                             yield from body.children
+
+            # Descend into try/except/else/finally so guarded imports are found.
+            # We do NOT recurse further into any function or class bodies found
+            # inside these blocks — only the direct children of each clause body.
+            elif child.type == "try_statement":
+                for clause in child.children:
+                    if clause.type == "block":
+                        # try: body
+                        yield from clause.children
+                    elif clause.type in ("except_clause", "except_group_clause"):
+                        # except [ExcType]: body  — body is the last child
+                        for sub in clause.children:
+                            if sub.type == "block":
+                                yield from sub.children
+                    elif clause.type == "else_clause":
+                        for sub in clause.children:
+                            if sub.type == "block":
+                                yield from sub.children
+                    elif clause.type == "finally_clause":
+                        for sub in clause.children:
+                            if sub.type == "block":
+                                yield from sub.children
 
     def get_call_expressions(
         self, func_node: tree_sitter.Node, source_bytes: bytes

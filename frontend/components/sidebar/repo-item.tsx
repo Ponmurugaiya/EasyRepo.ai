@@ -5,7 +5,7 @@ import { cn, truncate } from "../../lib/utils";
 import { parseProgress } from "../../lib/progress";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { MessageSquare, GitBranch, RefreshCw } from "lucide-react";
-import { ingestRepository, getRepositoryStatus, getRepository, cancelRepositoryIndexing } from "../../lib/api";
+import { ingestRepository, getRepositoryStatus, getRepository, cancelRepositoryIndexing, deleteRepository } from "../../lib/api";
 import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
 import type { RepoSession } from "../../types/chat";
@@ -36,7 +36,7 @@ export function RepoItem({
     if (reindexing) return;
     if (
       !confirm(
-        `Re-index "${repo.repoName}"?\n\nThis will re-run the full pipeline (clone → extract → embed). Takes 2–5 min.`
+        `Re-index "${repo.repoName}"?\n\nThis will delete the existing index and re-run the full pipeline (clone → extract → embed). Takes 2–5 min.`
       )
     )
       return;
@@ -44,6 +44,14 @@ export function RepoItem({
     setReindexing(true);
     reindexRepoIdRef.current = repo.repoId;
     try {
+      // Delete the existing index so the deduplication check doesn't short-circuit.
+      // If the delete fails (e.g. 404 because it was already removed) we proceed anyway.
+      try {
+        await deleteRepository(repo.repoId);
+      } catch {
+        // Ignore — repo may have already been deleted or never existed
+      }
+      // Now submit for fresh indexing
       await ingestRepository(repo.repoUrl);
       updateRepoSession(repo.repoId, { status: "indexing", progressMessage: null });
 
