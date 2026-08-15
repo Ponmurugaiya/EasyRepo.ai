@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 
 _JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
 
+
+class CancellationRequestedError(RuntimeError):
+    """Raised by embed_batch() when should_cancel() returns True between batches."""
+
 # ── Rate-limit config (overridable via env vars) ──────────────────────────────
 # Free tier:  100 RPM, 100K TPM  → default conservatively to free tier
 # Paid tier:  top up via Stripe → 500 RPM, 2M TPM
@@ -236,6 +240,7 @@ class CodeEmbedder:
         task: str = TASK_PASSAGE,
         on_progress: Callable[[int, int], None] | None = None,
         on_wait: Callable[[float], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[list[float]]:
         """Embed a list of texts, returning one vector per text.
 
@@ -255,6 +260,9 @@ class CodeEmbedder:
             on_wait: Optional callback(seconds) called just before the rate
                      limiter sleeps, so callers can show a user-facing
                      "Too many requests — waiting Xs, please wait…" message.
+            should_cancel: Optional callable that returns True when the caller
+                           wants to abort. Checked between batches so at most
+                           one in-flight Jina call completes before stopping.
         """
         if not texts:
             return []
@@ -271,6 +279,12 @@ class CodeEmbedder:
         done = 0
 
         for i, batch in enumerate(batches):
+            # Check for cancellation before acquiring a rate-limit slot or
+            # making any HTTP call — stops between batches, not mid-request.
+            if should_cancel and should_cancel():
+                logger.info("Jina embed: cancellation requested after %d/%d texts", done, total)
+                raise CancellationRequestedError("Embedding cancelled by user")
+
             est_tokens = sum(_estimate_tokens(t) for t in batch)
             logger.info(
                 "Jina embed: batch %d/%d — %d texts, ~%d tokens",

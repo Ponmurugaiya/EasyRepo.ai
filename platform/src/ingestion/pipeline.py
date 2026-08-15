@@ -44,7 +44,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from src.embedding.config import BATCH_SIZE
-from src.embedding.embedder import CodeEmbedder, format_entity_for_embedding
+from src.embedding.embedder import CodeEmbedder, CancellationRequestedError, format_entity_for_embedding
 from src.extraction.entity_extractor import EntityExtractor
 from src.languages import ADAPTER_REGISTRY
 from src.resolution import resolve_relationships
@@ -360,10 +360,19 @@ def ingest_repository(
                 pct=None,
             )
 
+        def _should_cancel() -> bool:
+            """Re-read the repo row; return True if user cancelled."""
+            try:
+                row = db_session.query(RepositoryModel).filter_by(id=repo_id).first()
+                return row is not None and row.status == "cancelled"
+            except Exception:
+                return False
+
         all_embeddings = embedder.embed_batch(
             texts,
             on_progress=_on_embed_progress,
             on_wait=_on_embed_wait,
+            should_cancel=_should_cancel,
         )
 
         t3_done = time.perf_counter()
@@ -447,7 +456,7 @@ def ingest_repository(
         repo = db_session.query(RepositoryModel).filter_by(id=repo_id).first()
         if repo:
             # Don't overwrite a user-triggered cancel with "failed"
-            if isinstance(exc, CancellationError):
+            if isinstance(exc, (CancellationError, CancellationRequestedError)):
                 repo.status = "cancelled"
                 repo.progress_message = "Indexing cancelled."
             else:
