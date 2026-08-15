@@ -135,14 +135,7 @@ export function ChatMessage({ message, repoId, jobProgress }: ChatMessageProps) 
                   citationMap={isOverview ? undefined : citationMap}
                   onCitationClick={isOverview ? undefined : handleCitationClick}
                 />
-                {/* Provider chip */}
-                {"provider" in message && message.provider && (
-                  <div className="mt-3 pt-2 border-t border-zinc-700/50">
-                    <span className="text-xs text-zinc-600">
-                      via {message.provider}
-                    </span>
-                  </div>
-                )}
+                {/* Provider chip removed — internal implementation detail */}
               </div>
               {/* Citations panel — always shown when citations present */}
               {"citations" in message && message.citations && (
