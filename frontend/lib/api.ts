@@ -164,6 +164,12 @@ export async function getRepository(
   return request<RepositoryResponse>(`/repositories/${repoId}`);
 }
 
+export async function cancelRepositoryIndexing(
+  repoId: string
+): Promise<{ repo_id: string; status: string; cancelled: boolean }> {
+  return request(`/repositories/${repoId}/cancel`, { method: "POST" });
+}
+
 // ── Ask ─────────────────────────────────────────────────────────────────────
 
 export interface AskJobSubmittedResponse {

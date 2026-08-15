@@ -55,6 +55,10 @@ logger = logging.getLogger(__name__)
 
 _URL_RE = re.compile(r'^(https?://|git@|git://)', re.IGNORECASE)
 
+
+class CancellationError(RuntimeError):
+    """Raised when the pipeline detects that the user cancelled indexing."""
+
 # Extensions that the adapter registry supports (Python + TypeScript).
 # Used to detect mixed-language repos and provide user-facing warnings.
 _SUPPORTED_EXTENSIONS = frozenset([".py", ".ts", ".tsx"])
@@ -124,6 +128,8 @@ def _scan_languages(repo_path: Path) -> tuple[bool, list[str]]:
 
 def _friendly_ingest_error(exc: Exception) -> str:
     """Map a raw pipeline exception to a clean, user-facing progress message."""
+    if isinstance(exc, CancellationError):
+        return "Indexing cancelled."
     msg = str(exc).lower()
 
     if "rate limit" in msg or "429" in msg or "too many" in msg:
@@ -164,6 +170,20 @@ def _clone(url: str, progress_cb) -> str:
         )
     logger.info("Clone complete: %s", tmp)
     return tmp
+
+
+# ── Cancellation helper ───────────────────────────────────────────────────────
+
+def _check_cancelled(repo_id: str, session: Session) -> None:
+    """Re-read the repo row and raise CancellationError if status is 'cancelled'.
+
+    Called between pipeline stages so a user-triggered cancel takes effect
+    at the next safe checkpoint without interrupting an in-flight HTTP call.
+    """
+    from sqlalchemy.orm import Session as _Session  # noqa: avoid circular at top
+    row = session.query(RepositoryModel).filter_by(id=repo_id).first()
+    if row and row.status == "cancelled":
+        raise CancellationError(f"Indexing cancelled by user for repo {repo_id}")
 
 
 # ── Progress helper ───────────────────────────────────────────────────────────
@@ -295,6 +315,9 @@ def ingest_repository(
         t1_done = time.perf_counter()
         logger.info("Extraction: %d entities in %.1fs", len(extracted_ents), t1_done - t1)
 
+        # Cancellation checkpoint — after the cheap extraction stage
+        _check_cancelled(repo_id, db_session)
+
         # ── Stage 3: relationship resolution ─────────────────────────────────
         t2 = time.perf_counter()
         progress(f"Resolving relationships for {len(extracted_ents)} entities…", pct=25)
@@ -306,6 +329,9 @@ def ingest_repository(
 
         t2_done = time.perf_counter()
         logger.info("Resolution: %d relationships in %.1fs", len(all_rels), t2_done - t2)
+
+        # Cancellation checkpoint — before the slow embedding stage
+        _check_cancelled(repo_id, db_session)
 
         # ── Stage 4: embedding ────────────────────────────────────────────────
         t3 = time.perf_counter()
@@ -420,8 +446,13 @@ def ingest_repository(
         logger.error("Ingestion failed for '%s': %s", repo_name, exc, exc_info=True)
         repo = db_session.query(RepositoryModel).filter_by(id=repo_id).first()
         if repo:
-            repo.status = "failed"
-            repo.progress_message = _friendly_ingest_error(exc)
+            # Don't overwrite a user-triggered cancel with "failed"
+            if isinstance(exc, CancellationError):
+                repo.status = "cancelled"
+                repo.progress_message = "Indexing cancelled."
+            else:
+                repo.status = "failed"
+                repo.progress_message = _friendly_ingest_error(exc)
             db_session.commit()
         raise
 

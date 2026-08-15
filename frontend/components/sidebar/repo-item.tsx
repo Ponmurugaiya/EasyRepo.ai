@@ -1,10 +1,10 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { cn, truncate } from "../../lib/utils";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { MessageSquare, GitBranch, RefreshCw } from "lucide-react";
-import { ingestRepository, getRepositoryStatus, getRepository } from "../../lib/api";
+import { ingestRepository, getRepositoryStatus, getRepository, cancelRepositoryIndexing } from "../../lib/api";
 import { useChatStore } from "../../store/chat-store";
 import { useGraphStore } from "../../store/graph-store";
 import type { RepoSession } from "../../types/chat";
@@ -25,6 +25,8 @@ export function RepoItem({
   showGraphHint = false,
 }: RepoItemProps) {
   const [reindexing, setReindexing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const reindexRepoIdRef = useRef<string | null>(null);
   const { updateRepoSession } = useChatStore();
   const { activeRepoId: graphRepoId, refreshGraph } = useGraphStore();
 
@@ -39,6 +41,7 @@ export function RepoItem({
       return;
 
     setReindexing(true);
+    reindexRepoIdRef.current = repo.repoId;
     try {
       await ingestRepository(repo.repoUrl);
       updateRepoSession(repo.repoId, { status: "indexing", progressMessage: null });
@@ -65,6 +68,10 @@ export function RepoItem({
           });
           break;
         }
+        if (s.status === "cancelled") {
+          updateRepoSession(repo.repoId, { status: "cancelled", progressMessage: null });
+          break;
+        }
         // Still indexing — update both status and progress message for live display
         updateRepoSession(repo.repoId, {
           status: s.status,
@@ -75,6 +82,20 @@ export function RepoItem({
       // status badge will show failed
     } finally {
       setReindexing(false);
+    }
+  }
+
+  async function handleCancel(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (cancelling || !reindexing) return;
+    setCancelling(true);
+    try {
+      await cancelRepositoryIndexing(repo.repoId);
+      updateRepoSession(repo.repoId, { status: "cancelled", progressMessage: null });
+    } catch {
+      // ignore — polling loop will pick up the cancelled status
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -150,9 +171,20 @@ export function RepoItem({
             const isWaiting = msg.includes("Too many requests");
             const displayMsg = msg || "Re-indexing…";
             return (
-              <p className={`mt-0.5 text-[10px] animate-pulse ${isWaiting ? "text-amber-400" : "text-blue-400"}`}>
-                {displayMsg}
-              </p>
+              <div className="mt-0.5 flex items-center justify-between gap-1">
+                <p className={`text-[10px] animate-pulse truncate ${isWaiting ? "text-amber-400" : "text-blue-400"}`}>
+                  {displayMsg}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  title="Cancel indexing"
+                  className="shrink-0 text-[10px] text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-40"
+                >
+                  {cancelling ? "…" : "cancel"}
+                </button>
+              </div>
             );
           })()}
 

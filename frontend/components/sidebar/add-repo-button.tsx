@@ -18,7 +18,7 @@ import {
   Plus, GitBranch, CheckCircle2, XCircle,
   Download, FileSearch, GitMerge, Cpu, Database, Check, Loader2, AlertTriangle,
 } from "lucide-react";
-import { ingestRepository, getRepositoryStatus } from "../../lib/api";
+import { ingestRepository, getRepositoryStatus, cancelRepositoryIndexing } from "../../lib/api";
 import { useChatStore } from "../../store/chat-store";
 import { cn, sleep } from "../../lib/utils";
 import { parseProgress } from "../../lib/progress";
@@ -240,6 +240,11 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
               "Indexing failed on the server."
           );
         }
+        if (statusResp.status === "cancelled") {
+          // User cancelled from another surface (e.g. repo-item) — stop polling silently
+          abortRef.current = true;
+          break;
+        }
       }
       throw new Error("Timed out waiting for indexing to complete.");
     } catch (err: unknown) {
@@ -252,6 +257,11 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
   function handleOpenChange(val: boolean) {
     if (!val) {
       abortRef.current = true;
+      // If we're actively polling, cancel the backend job before closing
+      if (step === "polling" && addedRepoId) {
+        cancelRepositoryIndexing(addedRepoId).catch(() => {});
+        updateRepoSession(addedRepoId, { status: "cancelled" });
+      }
       if (step !== "polling") {
         setStep("idle");
         setSource("");
@@ -520,6 +530,30 @@ export function AddRepoButton({ variant = "outline" }: { variant?: "outline" | "
                       ? "Embedding is the slowest step — Jina AI is generating vectors"
                       : "Usually completes in 2–5 minutes for medium repos"}
                   </p>
+
+                  {/* Cancel button */}
+                  <div className="flex justify-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        abortRef.current = true;
+                        if (addedRepoId) {
+                          cancelRepositoryIndexing(addedRepoId).catch(() => {});
+                          updateRepoSession(addedRepoId, { status: "cancelled" });
+                        }
+                        setStep("idle");
+                        setSource("");
+                        setProgressMessage("");
+                        setAddedRepoId(null);
+                        setLanguageWarning(null);
+                        startTimeRef.current = 0;
+                        setOpen(false);
+                      }}
+                      className="text-xs text-zinc-500 hover:text-red-400 transition-colors underline underline-offset-2"
+                    >
+                      Cancel indexing
+                    </button>
+                  </div>
                 </>
               );
             })()}

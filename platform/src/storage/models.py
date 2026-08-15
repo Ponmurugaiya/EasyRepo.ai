@@ -61,7 +61,7 @@ class RepositoryModel(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'indexing', 'ready', 'failed')",
+            "status IN ('pending', 'indexing', 'ready', 'failed', 'cancelled')",
             name="chk_repo_status",
         ),
     )

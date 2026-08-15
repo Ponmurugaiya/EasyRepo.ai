@@ -25,6 +25,11 @@ const config: Record<
     dot: "bg-red-400",
     text: "text-red-700 dark:text-red-400",
   },
+  cancelled: {
+    label: "Cancelled",
+    dot: "bg-zinc-500",
+    text: "text-zinc-500 dark:text-zinc-400",
+  },
 };
 
 export function StatusBadge({ status }: { status: RepoStatus }) {

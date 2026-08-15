@@ -272,6 +272,39 @@ def _ensure_access(user_id: str, repo_id: str, default_role: str, db: Session) -
 
 
 # ---------------------------------------------------------------------------
+# Cancel indexing
+# ---------------------------------------------------------------------------
+
+@router.post("/{repo_id}/cancel", status_code=status.HTTP_200_OK)
+@_limiter.limit(_RATE_DEFAULT)
+async def cancel_repository_indexing(
+    request: Request,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_current_user),
+) -> dict:
+    """Cancel an in-progress indexing job for a repository.
+
+    Sets ``status = 'cancelled'`` on the repository row. The running
+    pipeline worker checks this flag between stages and stops gracefully.
+    Has no effect if the repo is already ``ready``, ``failed``, or
+    ``cancelled``.
+    """
+    repo = get_accessible_repository(repo_id, db, current_user)
+
+    if repo.status not in ("pending", "indexing"):
+        return {"repo_id": repo_id, "status": repo.status, "cancelled": False}
+
+    repo.status = "cancelled"
+    repo.progress_message = "Indexing cancelled."
+    db.commit()
+
+    import logging as _log
+    _log.getLogger(__name__).info("Indexing cancelled by user for repo %s", repo_id)
+    return {"repo_id": repo_id, "status": "cancelled", "cancelled": True}
+
+
+# ---------------------------------------------------------------------------
 # Repository metadata
 # ---------------------------------------------------------------------------
 

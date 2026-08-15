@@ -2,7 +2,7 @@
 // API Types — mirrors the FastAPI schemas exactly
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type RepoStatus = "pending" | "indexing" | "ready" | "failed";
+export type RepoStatus = "pending" | "indexing" | "ready" | "failed" | "cancelled";
 
 export interface RepositoryResponse {
   repo_id: string;
