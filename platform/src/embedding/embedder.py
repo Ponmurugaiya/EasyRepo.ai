@@ -110,8 +110,13 @@ class _SlidingWindowRateLimiter:
         self._rpm = rpm_limit
         self._window: collections.deque[float] = collections.deque()
 
-    def acquire(self) -> None:
-        """Block until a request slot is available."""
+    def acquire(self, on_wait: Callable[[float], None] | None = None) -> None:
+        """Block until a request slot is available.
+
+        Args:
+            on_wait: Optional callback(seconds) called just before sleeping,
+                     so callers can surface a user-facing "please wait" message.
+        """
         now = time.monotonic()
         # Evict timestamps older than 60 seconds
         while self._window and now - self._window[0] >= 60.0:
@@ -125,6 +130,8 @@ class _SlidingWindowRateLimiter:
                     "Rate limiter: %d/%d requests used in last 60s — waiting %.1fs",
                     len(self._window), self._rpm, sleep_for,
                 )
+                if on_wait:
+                    on_wait(sleep_for)
                 time.sleep(sleep_for)
             # Evict again after sleeping
             now = time.monotonic()
@@ -218,6 +225,7 @@ class CodeEmbedder:
         batch_size: int | None = None,  # ignored — token-aware batching takes over
         input_type: str = INPUT_TYPE,
         on_progress: Callable[[int, int], None] | None = None,
+        on_wait: Callable[[float], None] | None = None,
     ) -> list[list[float]]:
         """Embed a list of texts, returning one vector per text.
 
@@ -230,7 +238,11 @@ class CodeEmbedder:
             batch_size: Ignored — kept for API compatibility. Token-aware
                         batching is used instead.
             input_type: "document" for indexing, "query" for search.
-            on_progress: Optional callback(done, total) called after each batch.
+            on_progress: Optional callback(done, total) called after each
+                         batch completes successfully.
+            on_wait: Optional callback(seconds) called just before the rate
+                     limiter sleeps, so callers can show a user-facing
+                     "Too many requests — waiting Xs, please wait…" message.
         """
         if not texts:
             return []
@@ -253,8 +265,8 @@ class CodeEmbedder:
                 i + 1, len(batches), len(batch), est_tokens,
             )
 
-            # Acquire a rate-limit slot (sleeps only if needed)
-            self._rate_limiter.acquire()
+            # Acquire a rate-limit slot (sleeps only if needed, fires on_wait)
+            self._rate_limiter.acquire(on_wait=on_wait)
 
             embeddings = self._embed_with_retry(batch, input_type)
             all_embeddings.extend(embeddings)

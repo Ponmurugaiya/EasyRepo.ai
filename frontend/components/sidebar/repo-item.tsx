@@ -145,11 +145,18 @@ export function RepoItem({
             </div>
           ) : null}
 
-          {reindexing && (
-            <p className="mt-0.5 text-[10px] text-blue-400 animate-pulse">
-              Re-indexing…
-            </p>
-          )}
+          {reindexing && (() => {
+            const msg = repo.progressMessage
+              ? repo.progressMessage.replace(/\|pct=\d+/, "").trim()
+              : "";
+            const isWaiting = msg.includes("Too many requests");
+            const displayMsg = msg && !msg.startsWith("|") ? msg : "Re-indexing…";
+            return (
+              <p className={`mt-0.5 text-[10px] animate-pulse ${isWaiting ? "text-amber-400" : "text-blue-400"}`}>
+                {displayMsg}
+              </p>
+            );
+          })()}
 
           {/* Failure reason — shown under the repo name when indexing fails */}
           {!reindexing && repo.status === "failed" && repo.progressMessage && (

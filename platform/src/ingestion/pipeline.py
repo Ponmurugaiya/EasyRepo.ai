@@ -315,19 +315,22 @@ def ingest_repository(
         embedder = CodeEmbedder()
         texts = [format_entity_for_embedding(e) for e in extracted_ents]
 
-        # Batch size and optional inter-batch delay come from env vars.
-        # Paid tier: leave defaults (BATCH_SIZE=128, no delay).
-        # Free tier: set VOYAGE_BATCH_SIZE=8 and VOYAGE_BATCH_DELAY_SECS=21.
-        batch_size = int(os.environ.get("VOYAGE_BATCH_SIZE", str(BATCH_SIZE)))
-
         def _on_embed_progress(done: int, total: int) -> None:
             embed_pct = 35 + int((done / total) * 55)
             progress(f"Embedding {done}/{total} entities…", pct=embed_pct)
+
+        def _on_embed_wait(seconds: float) -> None:
+            wait_secs = int(seconds) + 1  # round up so the UI never shows 0
+            progress(
+                f"Too many requests — rate limit reached, waiting {wait_secs}s…",
+                pct=None,
+            )
 
         all_embeddings = embedder.embed_batch(
             texts,
             batch_size=batch_size,
             on_progress=_on_embed_progress,
+            on_wait=_on_embed_wait,
         )
 
         t3_done = time.perf_counter()
