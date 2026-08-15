@@ -315,27 +315,20 @@ def ingest_repository(
         embedder = CodeEmbedder()
         texts = [format_entity_for_embedding(e) for e in extracted_ents]
 
-        all_embeddings: list[list[float]] = []
-        # Honour VOYAGE_BATCH_SIZE env var — default 4 for free-tier (3 RPM, 10K TPM).
-        # Set VOYAGE_BATCH_SIZE=128 once payment is added.
+        # Batch size and optional inter-batch delay come from env vars.
+        # Paid tier: leave defaults (BATCH_SIZE=128, no delay).
+        # Free tier: set VOYAGE_BATCH_SIZE=8 and VOYAGE_BATCH_DELAY_SECS=21.
         batch_size = int(os.environ.get("VOYAGE_BATCH_SIZE", str(BATCH_SIZE)))
-        # Inter-batch delay to respect Voyage free-tier 3 RPM limit (1 call/20s).
-        # Set VOYAGE_BATCH_DELAY_SECS=0 once payment is added.
-        inter_batch_delay = float(os.environ.get("VOYAGE_BATCH_DELAY_SECS", "21.0"))
-        for i, start in enumerate(range(0, n, batch_size)):
-            if i > 0 and inter_batch_delay > 0:
-                logger.info(
-                    "Voyage rate-limit pause: %.0fs between batches (%d/%d done)",
-                    inter_batch_delay, start, n,
-                )
-                time.sleep(inter_batch_delay)
-            chunk = texts[start : start + batch_size]
-            chunk_embeddings = embedder.embed_batch(chunk, batch_size=batch_size)
-            all_embeddings.extend(chunk_embeddings)
-            done = min(start + batch_size, n)
-            # Map embedding progress to 35–90% of total
-            embed_pct = 35 + int((done / n) * 55)
-            progress(f"Embedding {done}/{n} entities…", pct=embed_pct)
+
+        def _on_embed_progress(done: int, total: int) -> None:
+            embed_pct = 35 + int((done / total) * 55)
+            progress(f"Embedding {done}/{total} entities…", pct=embed_pct)
+
+        all_embeddings = embedder.embed_batch(
+            texts,
+            batch_size=batch_size,
+            on_progress=_on_embed_progress,
+        )
 
         t3_done = time.perf_counter()
         logger.info(
