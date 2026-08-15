@@ -104,11 +104,24 @@ Citation rules (CRITICAL — do not break these):
 """
 
 
-def _get_system_prompt(intent: str) -> str:
-    """Return the appropriate system prompt for the given intent."""
-    if intent == "repository_detailed":
-        return _SYSTEM_PROMPT_DETAILED
-    return _SYSTEM_PROMPT_OVERVIEW
+def _get_system_prompt(intent: str, repo_language_note: str | None = None) -> str:
+    """Return the appropriate system prompt for the given intent.
+
+    Appends a language coverage note when the repository contains files in
+    languages that are not yet supported (e.g. Java, Go, Ruby).  This keeps
+    the LLM honest about the scope of the indexed data.
+    """
+    base = _SYSTEM_PROMPT_DETAILED if intent == "repository_detailed" else _SYSTEM_PROMPT_OVERVIEW
+    if not repo_language_note:
+        return base
+    return (
+        base
+        + f"\n\n# Repository language coverage\n{repo_language_note}\n"
+        "When writing the overview, include a brief note (one bullet under the "
+        "Architecture or Overview section) stating which languages are indexed "
+        "(Python and TypeScript) and which others exist in the project but are "
+        "not yet indexed.  Do not fabricate details about the unindexed files."
+    )
 
 
 def _build_file_tree(file_paths: list[str]) -> str:
@@ -203,6 +216,7 @@ def summarize_repo(
     total_files: int = 0,
     file_paths: Optional[list[str]] = None,
     trace: Optional["PipelineTrace"] = None,
+    repo_language_note: Optional[str] = None,
 ) -> tuple[str, str]:
     """Synthesise folder summaries into a final repository overview answer.
 
@@ -223,6 +237,11 @@ def summarize_repo(
         tree prepended to the context so the LLM can describe the layout.
     trace:
         Optional PipelineTrace for structured logging.
+    repo_language_note:
+        Optional note about partial language coverage.  When the repo contains
+        files in unsupported languages (Java, Go, Ruby, …) alongside Python/TS,
+        this note is injected into the system prompt so the LLM can surface that
+        context in the final overview without fabricating details.
 
     Returns
     -------
@@ -237,8 +256,9 @@ def summarize_repo(
     mode = "detailed" if intent == "repository_detailed" else "overview"
     repo_query = f"Write a repository {mode} for this codebase. User query: {query}"
 
-    # Each intent gets its own focused system prompt
-    system = _get_system_prompt(intent)
+    # Each intent gets its own focused system prompt, optionally extended with
+    # a language coverage note for repos that contain unsupported languages.
+    system = _get_system_prompt(intent, repo_language_note=repo_language_note)
 
     if trace:
         trace.step_llm_dispatch(

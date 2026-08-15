@@ -439,6 +439,14 @@ async def run(
     # ── Step 6: Repo Summary Agent ────────────────────────────────────────────
     from src.agents.repo_summary_agent import summarize_repo
 
+    # Extract partial-language-coverage note stored during ingestion.
+    # The pipeline writes "|warn=<text>" into progress_message when the repo
+    # contains files in unsupported languages alongside Python/TypeScript.
+    _lang_note: str | None = None
+    if repo.progress_message and "|warn=" in repo.progress_message:
+        _warn_idx = repo.progress_message.find("|warn=")
+        _lang_note = repo.progress_message[_warn_idx + 6:] or None
+
     # Signal: generating final response
     if on_progress:
         on_progress("generating", "overview")
@@ -452,6 +460,7 @@ async def run(
             total_files=len(file_entity_map),
             file_paths=list(file_entity_map.keys()),
             trace=trace,
+            repo_language_note=_lang_note,
         )
         stm.answer_status = "answered"
     except Exception as exc:

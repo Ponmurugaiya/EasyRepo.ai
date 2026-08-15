@@ -114,9 +114,27 @@ The authentication system uses JWT tokens managed by `AuthService`.
 """
 
 
-def build_system_prompt() -> str:
-    """Return the immutable system prompt for the codebase Q&A assistant."""
-    return _SYSTEM_PROMPT
+def build_system_prompt(repo_language_note: str | None = None) -> str:
+    """Return the system prompt for the codebase Q&A assistant.
+
+    Parameters
+    ----------
+    repo_language_note:
+        Optional note about partial language coverage for this repository.
+        When provided (e.g. for repos that contain Java/Go/Ruby alongside
+        Python/TypeScript), it is appended as a clearly-marked section so the
+        LLM can be transparent with the user about which files were indexed.
+    """
+    if not repo_language_note:
+        return _SYSTEM_PROMPT
+    return (
+        _SYSTEM_PROMPT
+        + f"\n\n# Repository language coverage\n{repo_language_note}\n"
+        "When answering, be transparent about this limitation if the user asks "
+        "about features that may live in unsupported files. Mention which languages "
+        "are fully indexed (Python and TypeScript) and acknowledge the others exist "
+        "but could not be parsed yet."
+    )
 
 
 # ---------------------------------------------------------------------------
