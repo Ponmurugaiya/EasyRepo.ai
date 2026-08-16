@@ -1,46 +1,59 @@
 ﻿// ─────────────────────────────────────────────────────────────────────────────
-// Graph store — file-level code graph panel state
-// Entities are embedded in graphData.nodes — no separate expand/collapse needed
+// Graph store — expandable file-level code graph
+//
+// All graph data is fetched once (show_all=true). Visibility is controlled
+// client-side via visibleNodeIds:
+//
+//   Initial state: entry point + its direct neighbours
+//   + badge:       node has hidden neighbours → click to reveal them
+//   − badge:       node was expanded by user  → click to hide its neighbours
+//                  (nodes shared with other expanded nodes stay visible)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { FileGraphResponse } from "../types/graph";
+import type { FileGraphResponse, FileEdge } from "../types/graph";
 import { getFileGraph } from "../lib/graph-api";
 
 interface GraphState {
   isOpen: boolean;
   activeRepoId: string | null;
 
+  // Full graph data fetched from backend (all nodes + all edges)
   graphData: FileGraphResponse | null;
   loading: boolean;
   error: string | null;
 
-  // Which file nodes are "expanded" (showing full entity list vs. condensed)
+  // ── Visibility (expandable graph) ──────────────────────────────────────────
+  // Set of node IDs currently shown in the canvas
+  visibleNodeIds: Set<string>;
+  // Set of node IDs the user explicitly expanded (shows − badge)
+  userExpandedIds: Set<string>;
+
+  // ── Source-code expand (entity list inside node card) ─────────────────────
   expandedFiles: Set<string>;
 
-  // Hover state
+  // Hover / highlight
   hoveredNodeId: string | null;
-  hoveredEdgeKey: string | null; // "sourceId::targetId"
-
-  // Highlighted entity — set from chat citation "show in graph"
+  hoveredEdgeKey: string | null;
   highlightedEntityId: string | null;
   highlightedFileId: string | null;
 
   // Controls
-  selectedRoot: string | null;   // what backend returned as root (for display)
-  userRoot: string | null;       // what the user explicitly picked from the dropdown
-  depth: number;
+  selectedRoot: string | null;
   includeImports: boolean;
-  showAll: boolean;              // show every file node regardless of edges
 
-  // Actions
+  // ── Actions ───────────────────────────────────────────────────────────────
   openGraph: (repoId: string, options?: { root?: string }) => Promise<void>;
   closeGraph: () => void;
-  refreshGraph: (root?: string) => Promise<void>;
+  refreshGraph: () => Promise<void>;
+
+  // Expand a node: add its direct neighbours to visibleNodeIds
+  expandNode: (nodeId: string) => void;
+  // Collapse a node: remove neighbours that were only visible because of this node
+  collapseNode: (nodeId: string) => void;
+
   setRoot: (entityId: string) => void;
-  setDepth: (depth: number) => void;
   setIncludeImports: (v: boolean) => void;
-  setShowAll: (v: boolean) => void;
 
   toggleExpand: (fileId: string) => void;
   expandAll: () => void;
@@ -53,37 +66,77 @@ interface GraphState {
   clearHighlight: () => void;
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** All neighbour IDs (outgoing + incoming) for a given node across all edges. */
+function neighboursOf(nodeId: string, edges: FileEdge[], includeImports: boolean): Set<string> {
+  const result = new Set<string>();
+  for (const e of edges) {
+    if (!includeImports && e.dominant_type === "IMPORTS") continue;
+    if (e.source_file_id === nodeId) result.add(e.target_file_id);
+    if (e.target_file_id === nodeId) result.add(e.source_file_id);
+  }
+  return result;
+}
+
+/** Compute initial visible set: entry point + all its direct neighbours. */
+function initialVisible(data: FileGraphResponse, includeImports: boolean): Set<string> {
+  const visible = new Set<string>();
+
+  // Pick the best entry point (first in list = highest scored), or first node
+  const rootId = data.entry_points[0] ?? data.nodes[0]?.id;
+  if (!rootId) return visible;
+
+  visible.add(rootId);
+  for (const nb of neighboursOf(rootId, data.edges, includeImports)) {
+    visible.add(nb);
+  }
+  return visible;
+}
+
+// ── Store ─────────────────────────────────────────────────────────────────────
+
 export const useGraphStore = create<GraphState>((set, get) => ({
   isOpen: false,
   activeRepoId: null,
   graphData: null,
   loading: false,
   error: null,
+  visibleNodeIds: new Set(),
+  userExpandedIds: new Set(),
   expandedFiles: new Set(),
   hoveredNodeId: null,
   hoveredEdgeKey: null,
   highlightedEntityId: null,
   highlightedFileId: null,
   selectedRoot: null,
-  userRoot: null,
-  depth: 4,
   includeImports: true,
-  showAll: true,               // default: show every file node
 
   openGraph: async (repoId, options = {}) => {
-    const { depth, includeImports, showAll } = get();
-    const root = options.root ?? undefined;
-    set({ isOpen: true, activeRepoId: repoId, loading: true, error: null, graphData: null, selectedRoot: null, userRoot: null });
+    const { includeImports } = get();
+    set({
+      isOpen: true,
+      activeRepoId: repoId,
+      loading: true,
+      error: null,
+      graphData: null,
+      visibleNodeIds: new Set(),
+      userExpandedIds: new Set(),
+      selectedRoot: null,
+    });
     try {
-      // When no explicit root is set, always request all nodes so the graph
-      // never appears empty just because edges haven't resolved yet.
-      const data = await getFileGraph(repoId, {
-        root,
-        depth,
-        includeImports,
-        showAll: root ? false : showAll,
+      // Always fetch everything; visibility is client-side
+      const data = await getFileGraph(repoId, { showAll: true });
+      const visible = initialVisible(data, includeImports);
+      const rootId = options.root ?? data.entry_points[0] ?? data.nodes[0]?.id ?? null;
+      set({
+        graphData: data,
+        visibleNodeIds: visible,
+        userExpandedIds: new Set(),
+        selectedRoot: rootId,
+        loading: false,
+        expandedFiles: new Set(),
       });
-      set({ graphData: data, selectedRoot: data.root ?? null, loading: false, expandedFiles: new Set() });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
@@ -91,32 +144,88 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   closeGraph: () => set({ isOpen: false, hoveredNodeId: null, hoveredEdgeKey: null }),
 
-  refreshGraph: async (root) => {
-    const { activeRepoId, depth, includeImports, userRoot, showAll } = get();
+  refreshGraph: async () => {
+    const { activeRepoId, includeImports } = get();
     if (!activeRepoId) return;
-    set({ loading: true, error: null, graphData: null });
+    set({ loading: true, error: null, graphData: null, visibleNodeIds: new Set(), userExpandedIds: new Set() });
     try {
-      const effectiveRoot = root ?? userRoot ?? undefined;
-      const data = await getFileGraph(activeRepoId, {
-        root: effectiveRoot,
-        depth,
-        includeImports,
-        // Use show_all when no explicit root is set — otherwise BFS from the root
-        showAll: effectiveRoot ? false : showAll,
+      const data = await getFileGraph(activeRepoId, { showAll: true });
+      const visible = initialVisible(data, includeImports);
+      const rootId = data.entry_points[0] ?? data.nodes[0]?.id ?? null;
+      set({
+        graphData: data,
+        visibleNodeIds: visible,
+        userExpandedIds: new Set(),
+        selectedRoot: rootId,
+        loading: false,
+        expandedFiles: new Set(),
       });
-      set({ graphData: data, selectedRoot: data.root ?? null, loading: false, expandedFiles: new Set() });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
   },
 
-  setRoot: (entityId) => {
-    set({ selectedRoot: entityId, userRoot: entityId });
-    get().refreshGraph(entityId);
+  expandNode: (nodeId) => {
+    const { graphData, visibleNodeIds, userExpandedIds, includeImports } = get();
+    if (!graphData) return;
+    const neighbours = neighboursOf(nodeId, graphData.edges, includeImports);
+    const next = new Set(visibleNodeIds);
+    for (const nb of neighbours) next.add(nb);
+    const nextExpanded = new Set(userExpandedIds);
+    nextExpanded.add(nodeId);
+    set({ visibleNodeIds: next, userExpandedIds: nextExpanded });
   },
-  setDepth: (depth) => { set({ depth }); get().refreshGraph(); },
-  setIncludeImports: (v) => { set({ includeImports: v }); get().refreshGraph(); },
-  setShowAll: (v) => { set({ showAll: v }); get().refreshGraph(); },
+
+  collapseNode: (nodeId) => {
+    const { graphData, visibleNodeIds, userExpandedIds, includeImports, selectedRoot } = get();
+    if (!graphData) return;
+
+    // Remove this node from userExpandedIds
+    const nextExpanded = new Set(userExpandedIds);
+    nextExpanded.delete(nodeId);
+
+    // Re-compute which nodes should remain visible:
+    // - The initial visible set (entry + its neighbours)
+    // - Plus neighbours of all still-expanded nodes
+    const recomputed = initialVisible(graphData, includeImports);
+    for (const expandedId of nextExpanded) {
+      recomputed.add(expandedId);
+      for (const nb of neighboursOf(expandedId, graphData.edges, includeImports)) {
+        recomputed.add(nb);
+      }
+    }
+
+    set({ visibleNodeIds: recomputed, userExpandedIds: nextExpanded });
+  },
+
+  setRoot: (entityId) => {
+    const { graphData, includeImports } = get();
+    if (!graphData) return;
+    // Re-seed visibility from the new root
+    const visible = new Set<string>();
+    visible.add(entityId);
+    for (const nb of neighboursOf(entityId, graphData.edges, includeImports)) {
+      visible.add(nb);
+    }
+    set({ selectedRoot: entityId, visibleNodeIds: visible, userExpandedIds: new Set() });
+  },
+
+  setIncludeImports: (v) => {
+    set({ includeImports: v });
+    // Re-seed from current root with updated edge filter
+    const { graphData, selectedRoot, userExpandedIds } = get();
+    if (!graphData) return;
+    const rootId = selectedRoot ?? graphData.entry_points[0] ?? graphData.nodes[0]?.id;
+    if (!rootId) return;
+    const visible = new Set<string>();
+    visible.add(rootId);
+    for (const nb of neighboursOf(rootId, graphData.edges, v)) visible.add(nb);
+    for (const expandedId of userExpandedIds) {
+      visible.add(expandedId);
+      for (const nb of neighboursOf(expandedId, graphData.edges, v)) visible.add(nb);
+    }
+    set({ visibleNodeIds: visible });
+  },
 
   toggleExpand: (fileId) => {
     const next = new Set(get().expandedFiles);
@@ -139,11 +248,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     let fileId: string | null = null;
 
     const findFile = (data: FileGraphResponse) => {
-      // First try: direct entity ID match inside node entities (most reliable)
       for (const node of data.nodes) {
         if ((node.entities ?? []).some((e) => e.id === entityId)) return node.id;
       }
-      // Fallback: prefix-match on node IDs (e.g. py.api.main.lifespan → py.api.main)
       const candidates = data.nodes
         .map((n) => n.id)
         .filter((nid) => entityId === nid || entityId.startsWith(nid + "."));
@@ -153,26 +260,25 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     };
 
     if (graphData) fileId = findFile(graphData);
-
     set({ isOpen: true, highlightedEntityId: entityId, highlightedFileId: fileId });
 
-    // Load graph if not yet loaded for this repo
     if (!get().activeRepoId || get().activeRepoId !== repoId) {
       await get().openGraph(repoId);
     }
 
-    // Re-derive fileId from freshly loaded graph data (fixes stale-closure bug)
     const latestData = get().graphData;
     if (latestData) {
       fileId = findFile(latestData);
       set({ highlightedFileId: fileId });
-    }
-
-    // Ensure the file is expanded so the entity row is visible
-    if (fileId) {
-      const next = new Set(get().expandedFiles);
-      next.add(fileId);
-      set({ expandedFiles: next });
+      // Make the file visible if it isn't already
+      if (fileId) {
+        const next = new Set(get().visibleNodeIds);
+        next.add(fileId);
+        set({ visibleNodeIds: next });
+        const nextExp = new Set(get().expandedFiles);
+        nextExp.add(fileId);
+        set({ expandedFiles: nextExp });
+      }
     }
   },
 

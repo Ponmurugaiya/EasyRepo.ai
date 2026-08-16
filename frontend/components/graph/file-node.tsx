@@ -50,11 +50,16 @@ const ENTITY_BG_HOVER: Record<string, string> = {
 
 export interface FileNodeData extends FileNode {
   onEntityClick: (entity: InlineEntity, fileId: string) => void;
-  onToggleExpand: (id: string) => void;   // passed from panel — no store in node
-  isExpanded: boolean;                    // passed from panel
+  onToggleExpand: (id: string) => void;   // toggles source-code view
+  isExpanded: boolean;                    // source-code view open?
   isHighlighted: boolean;
   highlightedEntityId: string | null;
   isHovered: boolean;
+  // Expandable graph controls
+  hiddenNeighboursCount: number;          // > 0 → show + badge
+  isUserExpanded: boolean;                // true → show − badge
+  onExpandNode: () => void;
+  onCollapseNode: () => void;
 }
 
 // Max lines shown in collapsed-source preview
@@ -266,6 +271,41 @@ function FileNodeComponent({ id, data }: NodeProps<FileNodeData>) {
       ) : (
         <div className="px-3 py-2 text-[10px] text-zinc-700 italic">
           no source available
+        </div>
+      )}
+
+      {/* ── Expand / collapse neighbour badges ── */}
+      {(data.hiddenNeighboursCount > 0 || data.isUserExpanded) && (
+        <div className="flex items-center justify-end gap-1.5 px-2 py-1.5
+                        border-t border-zinc-800/60 bg-zinc-900/40 shrink-0">
+          {/* − collapse badge: only when user explicitly expanded this node */}
+          {data.isUserExpanded && (
+            <button
+              onClick={(e) => { e.stopPropagation(); data.onCollapseNode(); }}
+              title="Hide neighbours added from this node"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold
+                         bg-zinc-700/70 text-zinc-300 border border-zinc-600/60
+                         hover:bg-red-900/60 hover:text-red-300 hover:border-red-700/50
+                         transition-colors select-none"
+            >
+              <span className="text-sm leading-none">−</span>
+            </button>
+          )}
+
+          {/* + expand badge: when this node has hidden neighbours */}
+          {data.hiddenNeighboursCount > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); data.onExpandNode(); }}
+              title={`Show ${data.hiddenNeighboursCount} hidden neighbour${data.hiddenNeighboursCount !== 1 ? "s" : ""}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold
+                         bg-blue-900/70 text-blue-300 border border-blue-700/50
+                         hover:bg-blue-800/80 hover:text-blue-200
+                         transition-colors select-none"
+            >
+              <span className="text-sm leading-none">+</span>
+              <span>{data.hiddenNeighboursCount}</span>
+            </button>
+          )}
         </div>
       )}
     </div>
