@@ -4,7 +4,7 @@
 // All graph data is fetched once (show_all=true). Visibility is controlled
 // client-side via visibleNodeIds:
 //
-//   Initial state: entry point + its direct neighbours
+//   Initial state: entry point + its direct neighbours + orphan files
 //   + badge:       node has hidden neighbours → click to reveal them
 //   − badge:       node was expanded by user  → click to hide its neighbours
 //                  (nodes shared with other expanded nodes stay visible)
@@ -79,18 +79,42 @@ function neighboursOf(nodeId: string, edges: FileEdge[], includeImports: boolean
   return result;
 }
 
-/** Compute initial visible set: entry point + all its direct neighbours. */
+/** Node IDs that appear in at least one edge. */
+function connectedNodeIds(edges: FileEdge[]): Set<string> {
+  const ids = new Set<string>();
+  for (const e of edges) {
+    ids.add(e.source_file_id);
+    ids.add(e.target_file_id);
+  }
+  return ids;
+}
+
+/** Add orphan files (nodes with no edges) to the visible set. */
+function addOrphanNodes(visible: Set<string>, data: FileGraphResponse): void {
+  const connected = connectedNodeIds(data.edges);
+  for (const node of data.nodes) {
+    if (!connected.has(node.id)) {
+      visible.add(node.id);
+    }
+  }
+}
+
+/** Compute initial visible set: entry point + direct neighbours + orphan files. */
 function initialVisible(data: FileGraphResponse, includeImports: boolean): Set<string> {
   const visible = new Set<string>();
 
   // Pick the best entry point (first in list = highest scored), or first node
   const rootId = data.entry_points[0] ?? data.nodes[0]?.id;
-  if (!rootId) return visible;
+  if (!rootId) {
+    addOrphanNodes(visible, data);
+    return visible;
+  }
 
   visible.add(rootId);
   for (const nb of neighboursOf(rootId, data.edges, includeImports)) {
     visible.add(nb);
   }
+  addOrphanNodes(visible, data);
   return visible;
 }
 
@@ -256,6 +280,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     for (const nb of neighboursOf(entityId, graphData.edges, includeImports)) {
       visible.add(nb);
     }
+    addOrphanNodes(visible, graphData);
     set({ selectedRoot: entityId, visibleNodeIds: visible, userExpandedIds: new Set() });
   },
 
@@ -273,6 +298,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       visible.add(expandedId);
       for (const nb of neighboursOf(expandedId, graphData.edges, v)) visible.add(nb);
     }
+    addOrphanNodes(visible, graphData);
     set({ visibleNodeIds: visible });
   },
 
@@ -341,6 +367,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           userExpanded.add(pathNode);
         }
       }
+      addOrphanNodes(visible, data);
     } else {
       // Disconnected — fall back to initial view + target node
       for (const id of initialVisible(data, includeImports)) visible.add(id);
