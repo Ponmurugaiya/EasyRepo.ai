@@ -94,6 +94,55 @@ function initialVisible(data: FileGraphResponse, includeImports: boolean): Set<s
   return visible;
 }
 
+/**
+ * BFS shortest path between two node IDs using all edges.
+ * Returns the list of node IDs from start to end (inclusive), or null if
+ * no path exists within maxHops.
+ */
+function shortestPath(
+  startId: string,
+  endId: string,
+  edges: FileEdge[],
+  maxHops = 20,
+): string[] | null {
+  if (startId === endId) return [startId];
+
+  // Build undirected adjacency from all edges (ignore import filter here —
+  // we want to find any path that exists in the graph)
+  const adj = new Map<string, Set<string>>();
+  for (const e of edges) {
+    if (!adj.has(e.source_file_id)) adj.set(e.source_file_id, new Set());
+    if (!adj.has(e.target_file_id)) adj.set(e.target_file_id, new Set());
+    adj.get(e.source_file_id)!.add(e.target_file_id);
+    adj.get(e.target_file_id)!.add(e.source_file_id);
+  }
+
+  const visited = new Map<string, string | null>(); // nodeId → parent
+  visited.set(startId, null);
+  const queue: Array<[string, number]> = [[startId, 0]];
+
+  while (queue.length > 0) {
+    const [current, depth] = queue.shift()!;
+    if (depth >= maxHops) continue;
+    for (const nb of adj.get(current) ?? []) {
+      if (visited.has(nb)) continue;
+      visited.set(nb, current);
+      if (nb === endId) {
+        // Reconstruct path
+        const path: string[] = [];
+        let cursor: string | null = endId;
+        while (cursor !== null) {
+          path.unshift(cursor);
+          cursor = visited.get(cursor) ?? null;
+        }
+        return path;
+      }
+      queue.push([nb, depth + 1]);
+    }
+  }
+  return null;
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useGraphStore = create<GraphState>((set, get) => ({
@@ -244,10 +293,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   setHoveredEdge: (key) => set({ hoveredEdgeKey: key }),
 
   highlightEntity: async (entityId, repoId) => {
-    const { graphData } = get();
-    let fileId: string | null = null;
+    const { includeImports } = get();
 
-    const findFile = (data: FileGraphResponse) => {
+    // ── Find file node containing this entity ────────────────────────────────
+    const findFileId = (data: FileGraphResponse): string | null => {
       for (const node of data.nodes) {
         if ((node.entities ?? []).some((e) => e.id === entityId)) return node.id;
       }
@@ -259,27 +308,55 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         : null;
     };
 
-    if (graphData) fileId = findFile(graphData);
-    set({ isOpen: true, highlightedEntityId: entityId, highlightedFileId: fileId });
+    set({ isOpen: true, highlightedEntityId: entityId, highlightedFileId: null });
 
+    // Load graph data if not already loaded for this repo
     if (!get().activeRepoId || get().activeRepoId !== repoId) {
       await get().openGraph(repoId);
     }
 
-    const latestData = get().graphData;
-    if (latestData) {
-      fileId = findFile(latestData);
-      set({ highlightedFileId: fileId });
-      // Make the file visible if it isn't already
-      if (fileId) {
-        const next = new Set(get().visibleNodeIds);
-        next.add(fileId);
-        set({ visibleNodeIds: next });
-        const nextExp = new Set(get().expandedFiles);
-        nextExp.add(fileId);
-        set({ expandedFiles: nextExp });
+    const data = get().graphData;
+    if (!data) return;
+
+    const fileId = findFileId(data);
+    set({ highlightedFileId: fileId });
+    if (!fileId) return;
+
+    // ── Build path-based visibility ──────────────────────────────────────────
+    // Show: entry → cited file via shortest path, each node + depth-1 neighbours.
+    const entryId = data.entry_points[0] ?? data.nodes[0]?.id;
+    const path = entryId ? shortestPath(entryId, fileId, data.edges) : null;
+
+    const visible = new Set<string>();
+    const userExpanded = new Set<string>();
+
+    if (path && path.length > 0) {
+      for (const pathNode of path) {
+        visible.add(pathNode);
+        for (const nb of neighboursOf(pathNode, data.edges, includeImports)) {
+          visible.add(nb);
+        }
+        // Mark each non-root path node as user-expanded so − badge appears
+        if (pathNode !== entryId) {
+          userExpanded.add(pathNode);
+        }
       }
+    } else {
+      // Disconnected — fall back to initial view + target node
+      for (const id of initialVisible(data, includeImports)) visible.add(id);
+      visible.add(fileId);
+      for (const nb of neighboursOf(fileId, data.edges, includeImports)) {
+        visible.add(nb);
+      }
+      userExpanded.add(fileId);
     }
+
+    set({
+      visibleNodeIds: visible,
+      userExpandedIds: userExpanded,
+      selectedRoot: entryId ?? null,
+      expandedFiles: new Set([fileId]),  // open source view for cited file
+    });
   },
 
   clearHighlight: () => set({ highlightedEntityId: null, highlightedFileId: null }),
