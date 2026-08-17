@@ -373,9 +373,10 @@ def compute_metrics(retrieved_ids: list[str], relevant_ids: set[str], k: int) ->
     return {"precision@k": precision_at_k, "recall@k": recall_at_k, "mrr": mrr}
 ```
 
-Until this is implemented, these metrics are recorded as "not computed" in the
-result file. The 6-scenario pass/fail and expansion integrity check are the
-primary quality signals for this evaluation run.
+Per-scenario values are printed by `validate_retrieval.py`. `run_evaluation.py`
+aggregates them as scenario means in the result file summary table. Graph
+expansion noise, token budget utilisation, and the truncated flag are not yet
+computed by the script.
 
 ### Extended metrics (once implemented)
 
@@ -393,7 +394,8 @@ primary quality signals for this evaluation run.
 - DB relationship audit: `All N expansion edges verified against DB relationships table.`
 - `FINAL RESULT: ALL PASSED`
 - `format_audit_log` at rank 1 in `analyze_q3_rankings.py` output
-- Precision@K, Recall@K, MRR: record as "not computed" until script is updated
+- Precision@K, Recall@K, MRR: mean across scenarios in result file (per-scenario values in raw output)
+- Graph expansion noise, token budget, truncated flag: still "not computed"
 
 ### Failure diagnosis
 | Symptom | Cause | Fix |

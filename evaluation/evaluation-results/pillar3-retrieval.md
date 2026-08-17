@@ -298,9 +298,9 @@ Voyage rate limit hit (attempt 2/5), retrying in 44.0s...
 
 | Metric | Formula | Value | Target | Pass? |
 |---|---|---|---|---|
-| Precision@10 | relevant hits in top 10 / 10 | see raw output | ≥ 0.5 | — |
-| Recall@10 | relevant hits in top 10 / total relevant | see raw output | ≥ 0.7 | — |
-| MRR | 1 / rank of first relevant hit | see raw output | ≥ 0.7 | — |
+| Precision@10 | relevant hits in top 10 / 10 | 0.250 (mean of 6 scenarios) | ≥ 0.5 | FAIL |
+| Recall@10 | relevant hits in top 10 / total relevant | 0.775 (mean of 6 scenarios) | ≥ 0.7 | PASS |
+| MRR | 1 / rank of first relevant hit | 0.889 (mean of 6 scenarios) | ≥ 0.7 | PASS |
 | Graph expansion noise ratio | non-relevant expanded / total expanded | not computed | ≤ 0.3 | — |
 | Token budget utilisation | total_tokens_est / token_budget | not computed | ≤ 0.9 | — |
 | Truncated flag fired | scenarios where context was truncated | not computed | 0 | — |

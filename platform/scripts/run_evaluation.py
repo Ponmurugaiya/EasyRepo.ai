@@ -11,12 +11,12 @@ If --repo-id is omitted the script reads EVAL_REPO_ID from the environment.
 The API server (python run.py) must already be running when Pillars 4–6 execute.
 
 Output files written:
-    evaluation-results/pillar1-extraction.md
-    evaluation-results/pillar2-storage.md
-    evaluation-results/pillar3-retrieval.md
-    evaluation-results/pillar4-answers.md
-    evaluation-results/pillar5-citations.md
-    evaluation-results/pillar6-memory-agents.md
+    evaluation/evaluation-results/pillar1-extraction.md
+    evaluation/evaluation-results/pillar2-storage.md
+    evaluation/evaluation-results/pillar3-retrieval.md
+    evaluation/evaluation-results/pillar4-answers.md
+    evaluation/evaluation-results/pillar5-citations.md
+    evaluation/evaluation-results/pillar6-memory-agents.md
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ if hasattr(sys.stdout, "reconfigure"):
 # ── Path setup ────────────────────────────────────────────────────────────────
 PLATFORM_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = PLATFORM_DIR.parent
-RESULTS_DIR = REPO_ROOT / "evaluation-results"
+RESULTS_DIR = REPO_ROOT / "evaluation" / "evaluation-results"
 SCRIPTS_DIR = PLATFORM_DIR / "scripts"
 TESTS_DIR = PLATFORM_DIR / "tests"
 MANIFEST_PATH = REPO_ROOT / "sample-repo" / "test-manifest.json"
@@ -118,6 +118,37 @@ def _extract(pattern: str, text: str, default: str = "") -> str:
 
 def _pass_fail(condition: bool) -> str:
     return "PASS" if condition else "FAIL"
+
+
+def _parse_retrieval_metrics(raw_ret: str) -> dict:
+    """Parse per-scenario Precision@K, Recall@K, and MRR from validate_retrieval output."""
+    pattern = re.compile(
+        r"Retrieval Metrics \(K=(\d+)\): "
+        r"Precision@\d+=([\d.]+)\s+"
+        r"Recall@\d+=([\d.]+)\s+"
+        r"MRR=([\d.]+)"
+    )
+    per_scenario = [
+        {"k": int(k), "precision": float(p), "recall": float(r), "mrr": float(m)}
+        for k, p, r, m in pattern.findall(raw_ret)
+    ]
+    if not per_scenario:
+        return {"count": 0, "precision_mean": None, "recall_mean": None, "mrr_mean": None}
+
+    n = len(per_scenario)
+    return {
+        "count": n,
+        "precision_mean": sum(s["precision"] for s in per_scenario) / n,
+        "recall_mean": sum(s["recall"] for s in per_scenario) / n,
+        "mrr_mean": sum(s["mrr"] for s in per_scenario) / n,
+    }
+
+
+def _fmt_metric_mean(value: float | None, count: int) -> str:
+    if value is None or count == 0:
+        return "not computed"
+    label = "scenario" if count == 1 else "scenarios"
+    return f"{value:.3f} (mean of {count} {label})"
 
 
 def _write_result(path: Path, content: str) -> None:
@@ -444,6 +475,16 @@ def run_pillar3(repo_id: str) -> bool:
     # Expansion edge audit line
     audit_line = _extract(r"(All \d+ expansion edges verified[^\n]*)", raw_ret)
 
+    # Numeric retrieval quality metrics (aggregated across scenarios)
+    ret_metrics = _parse_retrieval_metrics(raw_ret)
+    m_count = ret_metrics["count"]
+    precision_val = _fmt_metric_mean(ret_metrics["precision_mean"], m_count)
+    recall_val = _fmt_metric_mean(ret_metrics["recall_mean"], m_count)
+    mrr_val = _fmt_metric_mean(ret_metrics["mrr_mean"], m_count)
+    precision_pass = ret_metrics["precision_mean"] is not None and ret_metrics["precision_mean"] >= 0.5
+    recall_pass = ret_metrics["recall_mean"] is not None and ret_metrics["recall_mean"] >= 0.7
+    mrr_pass = ret_metrics["mrr_mean"] is not None and ret_metrics["mrr_mean"] >= 0.7
+
     verdict = "**PASS**" if overall_passed else "**FAIL**"
     verdict_para = (
         "All 6 retrieval scenarios passed and 100% of graph expansion edges were "
@@ -504,9 +545,9 @@ def run_pillar3(repo_id: str) -> bool:
 
 | Metric | Formula | Value | Target | Pass? |
 |---|---|---|---|---|
-| Precision@10 | relevant hits in top 10 / 10 | see raw output | ≥ 0.5 | — |
-| Recall@10 | relevant hits in top 10 / total relevant | see raw output | ≥ 0.7 | — |
-| MRR | 1 / rank of first relevant hit | see raw output | ≥ 0.7 | — |
+| Precision@10 | relevant hits in top 10 / 10 | {precision_val} | ≥ 0.5 | {_pass_fail(precision_pass) if m_count else "—"} |
+| Recall@10 | relevant hits in top 10 / total relevant | {recall_val} | ≥ 0.7 | {_pass_fail(recall_pass) if m_count else "—"} |
+| MRR | 1 / rank of first relevant hit | {mrr_val} | ≥ 0.7 | {_pass_fail(mrr_pass) if m_count else "—"} |
 | Graph expansion noise ratio | non-relevant expanded / total expanded | not computed | ≤ 0.3 | — |
 | Token budget utilisation | total_tokens_est / token_budget | not computed | ≤ 0.9 | — |
 | Truncated flag fired | scenarios where context was truncated | not computed | 0 | — |
